@@ -1,0 +1,147 @@
+{
+  "COMMODITY|BLENDED": {
+    "target_sale": 30000.0,
+    "target_realise": 200.0,
+    "difference6": 0
+  },
+  "COMMODITY|COTTON SEED": {
+    "target_sale": 20000,
+    "target_realise": 131
+  },
+  "COMMODITY|MUSTARD": {
+    "target_sale": 625000,
+    "target_realise": 145
+  },
+  "COMMODITY|RICE BRAN": {
+    "target_sale": 25000,
+    "target_realise": 130
+  },
+  "COMMODITY|SOYABEAN": {
+    "target_sale": 400000,
+    "target_realise": 123
+  },
+  "COMMODITY|SUNFLOWER": {
+    "target_sale": 135000,
+    "target_realise": 145
+  },
+  "PREMIUM|BLENDED": {
+    "target_sale": 10000,
+    "target_realise": 0
+  },
+  "PREMIUM|CANOLA": {
+    "target_sale": 350000,
+    "target_realise": 205
+  },
+  "PREMIUM|COCONUT": {
+    "target_sale": 5000,
+    "target_realise": 449
+  },
+  "PREMIUM|EXTRA VIRGIN OLIVE": {
+    "target_sale": 10000,
+    "target_realise": 500
+  },
+  "PREMIUM|GHEE": {
+    "target_sale": 15000,
+    "target_realise": 536
+  },
+  "PREMIUM|GROUNDNUT": {
+    "target_sale": 50000,
+    "target_realise": 175
+  },
+  "PREMIUM|OLIVE": {
+    "target_sale": 310000,
+    "target_realise": 253
+  },
+  "PREMIUM|SESAME": {
+    "target_sale": 5000,
+    "target_realise": 0
+  },
+  "PREMIUM|SLICED OLIVE": {
+    "target_sale": 0,
+    "target_realise": 0
+  },
+  "PREMIUM|YELLOW MUSTARD": {
+    "target_sale": 10000,
+    "target_realise": 180
+  },
+  "COMMODITY|BLENDED|DEFAULT|": {
+    "target_sale": 50000.0,
+    "target_realise": 130.0,
+    "difference6": 0
+  },
+  "COMMODITY|COTTON SEED|DEFAULT|": {
+    "target_sale": 20000.0,
+    "target_realise": 131.0,
+    "difference6": 0
+  },
+  "COMMODITY|MUSTARD|DEFAULT|": {
+    "target_sale": 625000.0,
+    "target_realise": 145.0,
+    "difference6": 0
+  },
+  "COMMODITY|RICE BRAN|DEFAULT|": {
+    "target_sale": 25000.0,
+    "target_realise": 130.0,
+    "difference6": 0
+  },
+  "PREMIUM|SLICED OLIVE|DEFAULT|": {
+    "target_sale": 0.0,
+    "target_realise": 0.0,
+    "difference6": 0
+  },
+  "COMMODITY|SOYABEAN|DEFAULT|": {
+    "target_sale": 400000.0,
+    "target_realise": 123.0,
+    "difference6": 0
+  },
+  "COMMODITY|SUNFLOWER|DEFAULT|": {
+    "target_sale": 135000.0,
+    "target_realise": 145.0,
+    "difference6": 0
+  },
+  "PREMIUM|BLENDED|DEFAULT|": {
+    "target_sale": 10000.0,
+    "target_realise": 0.0,
+    "difference6": 0
+  },
+  "PREMIUM|CANOLA|DEFAULT|": {
+    "target_sale": 350000.0,
+    "target_realise": 205.0,
+    "difference6": 0
+  },
+  "PREMIUM|COCONUT|DEFAULT|": {
+    "target_sale": 5000.0,
+    "target_realise": 449.0,
+    "difference6": 0
+  },
+  "PREMIUM|EXTRA VIRGIN OLIVE|DEFAULT|": {
+    "target_sale": 10000.0,
+    "target_realise": 500.0,
+    "difference6": 0
+  },
+  "PREMIUM|GHEE|DEFAULT|": {
+    "target_sale": 15000.0,
+    "target_realise": 536.0,
+    "difference6": 0
+  },
+  "PREMIUM|GROUNDNUT|DEFAULT|": {
+    "target_sale": 50000.0,
+    "target_realise": 175.0,
+    "difference6": 0
+  },
+  "PREMIUM|OLIVE|DEFAULT|": {
+    "target_sale": 310000.0,
+    "target_realise": 253.0,
+    "difference6": 0
+  },
+  "PREMIUM|SESAME|DEFAULT|": {
+    "target_sale": 5000.0,
+    "target_realise": 0.0,
+    "difference6": 0
+  },
+  "PREMIUM|YELLOW MUSTARD|DEFAULT|": {
+    "target_sale": 10000.0,
+    "target_realise": 180.0,
+    "difference6": 0
+  }
+}
