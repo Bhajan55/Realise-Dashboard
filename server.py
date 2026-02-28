@@ -150,9 +150,10 @@ def parse_doc_date(doc_date):
     return "", ""
 
 RECLASSIFY_RULES = [
-    ("YELLOW MUSTARD", "PREMIUM", "YELLOW MUSTARD"),
-    ("EXTRA VIRGIN",   "PREMIUM", "EXTRA VIRGIN OLIVE"),
-    ("SLICED OLIVE",   "PREMIUM", "SLICED OLIVE"),
+    ("YELLOW MUSTARD",       "PREMIUM", "YELLOW MUSTARD"),
+    ("EXTRA VIRGIN COCONUT", "PREMIUM", "COCONUT"),
+    ("EXTRA VIRGIN",         "PREMIUM", "EXTRA VIRGIN OLIVE"),
+    ("SLICED OLIVE",         "PREMIUM", "SLICED OLIVE"),
 ]
 
 def reclassify_item(u_type, u_sub, item_name):
