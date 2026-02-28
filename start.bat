@@ -4,7 +4,7 @@ echo ============================================
 echo   JIVO REALISE DASHBOARD
 echo ============================================
 echo.
-echo Starting server at http://localhost:8001
+echo Starting server at http://localhost:8002
 echo.
 python server.py
 pause

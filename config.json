@@ -1,0 +1,4 @@
+{
+  "edit_pin": "gill",
+  "admin_note": "Change edit_pin to update the PIN required to edit targets. Restart server after changing."
+}

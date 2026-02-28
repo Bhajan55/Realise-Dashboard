@@ -100,13 +100,52 @@ td.ccell{font-weight:500}
 ::-webkit-scrollbar{width:5px;height:5px}
 ::-webkit-scrollbar-track{background:var(--bg)}
 ::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
+/* PIN Modal */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:300;justify-content:center;align-items:center;backdrop-filter:blur(2px)}
+.modal-overlay.show{display:flex}
+.modal-box{background:var(--bg2);border-radius:12px;padding:24px;width:320px;box-shadow:0 20px 60px rgba(0,0,0,0.2);text-align:center}
+.modal-box h3{font-size:16px;margin-bottom:4px;color:var(--text)}
+.modal-box p{font-size:12px;color:var(--text3);margin-bottom:16px}
+.modal-box input{width:100%;padding:10px;border:2px solid var(--border);border-radius:8px;font-size:18px;text-align:center;letter-spacing:8px;font-family:inherit;outline:none;margin-bottom:12px}
+.modal-box input:focus{border-color:var(--blue);box-shadow:0 0 0 3px var(--blue-glow)}
+.modal-box .modal-btns{display:flex;gap:8px}
+.modal-box .modal-btns button{flex:1;padding:8px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;border:none;font-family:inherit}
+.modal-box .btn-cancel{background:var(--surface2);color:var(--text2)}
+.modal-box .btn-confirm{background:var(--blue);color:#fff}
+.modal-box .pin-error{color:var(--red);font-size:11px;margin-bottom:8px;display:none}
+/* Edit mode indicator */
+.btn-edit{background:var(--amber);color:#fff;border:none}
+.btn-edit:hover:not(:disabled){background:#b45309}
+.btn-lock{background:var(--surface2);color:var(--text2);border:1px solid var(--border)}
+.edit-indicator{display:none;background:var(--amber-bg);color:var(--amber);border:1px solid rgba(217,119,6,0.25);padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600}
+.edit-indicator.show{display:inline-flex;align-items:center;gap:4px}
+/* Locked input style */
+td.ecell input.locked{background:var(--surface2);color:var(--text3);cursor:not-allowed;border-color:var(--border)}
+/* Product filter dropdown */
+.prod-filter-wrap{position:relative;display:inline-block}
+.prod-filter-btn{background:var(--surface);border:1px solid var(--border);color:var(--text2);padding:5px 8px;border-radius:5px;font-size:12px;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:4px;min-width:100px}
+.prod-filter-btn:hover{border-color:var(--blue);background:var(--blue-glow)}
+.prod-filter-btn .pf-count{background:var(--blue);color:#fff;border-radius:8px;padding:0 5px;font-size:10px;font-weight:700;margin-left:2px}
+.prod-filter-drop{display:none;position:absolute;top:100%;left:0;margin-top:4px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.12);z-index:50;width:220px;max-height:340px;overflow-y:auto}
+.prod-filter-drop.show{display:block}
+.pf-header{padding:6px 10px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between}
+.pf-header button{background:none;border:none;color:var(--blue);font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;padding:2px 4px}
+.pf-header button:hover{text-decoration:underline}
+.pf-item{display:flex;align-items:center;gap:8px;padding:5px 10px;cursor:pointer;font-size:12px;transition:background .1s}
+.pf-item:hover{background:var(--surface)}
+.pf-item input{accent-color:var(--blue);cursor:pointer}
+.pf-item label{cursor:pointer;flex:1}
+.pf-item .pf-badge{font-size:9px;padding:1px 5px;border-radius:3px;font-weight:700}
+.pf-apply{padding:6px 10px;border-top:1px solid var(--border)}
+.pf-apply button{width:100%;padding:6px;background:var(--blue);color:#fff;border:none;border-radius:5px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit}
+.pf-apply button:hover{background:var(--blue2)}
 </style>
 </head>
 <body>
 <div class="header">
   <div class="header-left">
     <div class="logo-icon">JS</div>
-    <h1>Realise Dashboard <span>REPORT_SALES_ANALYSIS</span> <span class="vbadge">v8</span></h1>
+    <h1>Realise Dashboard <span>REPORT_SALES_ANALYSIS</span> <span class="vbadge">v9</span></h1>
   </div>
   <div class="status-pill"><span class="dot dot-red" id="sDot"></span><span id="sTxt">Checking...</span></div>
 </div>
@@ -118,6 +157,19 @@ td.ccell{font-weight:500}
   <div class="cg"><label>Type</label><select id="fType" onchange="applyFilters()"><option value="">All</option><option value="PREMIUM">PREMIUM</option><option value="COMMODITY">COMMODITY</option></select></div>
   <div class="cg"><label>Month</label><select id="fMonth" onchange="applyFilters()"><option value="">All Months</option></select></div>
   <div class="cg"><label>Year</label><select id="fYear" onchange="applyFilters()"><option value="">All Years</option></select></div>
+  <div class="cg"><label>Product</label>
+    <div class="prod-filter-wrap">
+      <button class="prod-filter-btn" id="pfBtn" onclick="toggleProductFilter()">All Products <span class="pf-count" id="pfCount" style="display:none"></span> &#9662;</button>
+      <div class="prod-filter-drop" id="pfDrop">
+        <div class="pf-header">
+          <button onclick="pfSelectAll()">Select All</button>
+          <button onclick="pfClearAll()">Clear All</button>
+        </div>
+        <div id="pfList"></div>
+        <div class="pf-apply"><button onclick="applyProductFilter()">Apply</button></div>
+      </div>
+    </div>
+  </div>
   <div class="sep"></div>
   <div class="cg"><label>Drill By</label>
     <select id="fDrill" class="drill-sel" onchange="onDrillChange()">
@@ -126,6 +178,7 @@ td.ccell{font-weight:500}
       <option value="U_Main_Group">Main Group</option>
       <option value="U_Chain">Chain</option>
       <option value="ItemName">Item Name</option>
+      <option value="CardName">Customer</option>
     </select>
   </div>
   <button class="btn btn-ghost" id="expandAllBtn" onclick="toggleExpandAll()" title="Expand/Collapse all products">&#9660; Expand All</button>
@@ -140,6 +193,8 @@ td.ccell{font-weight:500}
     </select>
   </div>
   <div class="controls-right">
+    <span class="edit-indicator" id="editIndicator">&#9998; Edit Mode</span>
+    <button class="btn btn-edit" id="editBtn" onclick="promptEditPin()">&#128274; Edit</button>
     <span class="dirty-badge" id="dirtyBadge">Unsaved changes</span>
     <button class="btn btn-save" id="saveBtn" disabled onclick="saveTargets()">&#128190; Save</button>
     <button class="btn btn-ghost" onclick="exportCSV()">&#11015; Export CSV</button>
@@ -149,9 +204,9 @@ td.ccell{font-weight:500}
   <div class="scard"><div class="sl">Target Wtd Realise</div><div class="sv" id="sTWR">&mdash;</div></div>
   <div class="scard"><div class="sl">Net Realise</div><div class="sv" id="sNR">&mdash;</div></div>
   <div class="scard"><div class="sl">Target Sales</div><div class="sv" id="sT">&mdash;</div></div>
+  <div class="scard"><div class="sl">Target vs Actual</div><div class="sv" id="sD">&mdash;</div></div>
   <div class="scard"><div class="sl">Actual Litres</div><div class="sv" id="sL">&mdash;</div></div>
   <div class="scard"><div class="sl">Line Total &#8377;</div><div class="sv" id="sLT">&mdash;</div></div>
-  <div class="scard"><div class="sl">Target vs Actual</div><div class="sv" id="sD">&mdash;</div></div>
   <div class="scard"><div class="sl">Products</div><div class="sv" id="sR">&mdash;</div></div>
 </div>
 <div class="twrap">
@@ -183,6 +238,18 @@ td.ccell{font-weight:500}
 </div>
 <div class="overlay" id="ov"><div class="spin"></div><div style="color:var(--text2);font-weight:500;font-size:13px">Fetching from SAP HANA...</div></div>
 <div class="toast" id="toast"></div>
+<div class="modal-overlay" id="pinModal">
+  <div class="modal-box">
+    <h3>&#128274; Enter Edit PIN</h3>
+    <p>Enter the admin PIN to enable editing targets</p>
+    <div class="pin-error" id="pinError">Incorrect PIN. Try again.</div>
+    <input type="password" id="pinInput" maxlength="10" placeholder="PIN" onkeydown="if(event.key==='Enter')verifyPin()">
+    <div class="modal-btns">
+      <button class="btn-cancel" onclick="closePinModal()">Cancel</button>
+      <button class="btn-confirm" onclick="verifyPin()">Unlock</button>
+    </div>
+  </div>
+</div>
 
 <script>
 var API=window.location.origin;
@@ -214,6 +281,10 @@ function currentMonth(){return MONTHS[new Date().getMonth()];}
 var allData=[],filtered=[],dataFetched=false,isDirty=false,modifiedRealKeys=new Set();
 var drillData={},drillOpen={},drillDim={},rootDrillDim='';
 var avgRealiseData={},avgRealiseDrill={},avgPeriod='';
+var editMode=false;
+var selectedProducts={}; // key=product name, value=true/false
+// Init all products as selected
+for(var pi=0;pi<PRODUCTS.length;pi++)selectedProducts[PRODUCTS[pi].u_sub_group]=true;
 
 function getDrillBy(){return document.getElementById('fDrill').value;}
 function productKey(r){return r.u_type+'|'+r.u_sub_group;}
@@ -295,7 +366,7 @@ async function checkHealth(){try{var r=await fetch(API+'/health');var d=await r.
 function realKey(r){return r.u_type+'|'+r.u_sub_group+'|'+r.month+'|'+r.year;}
 function isAggregatedView(){return document.getElementById('fMonth').value==='';}
 function findUnderlyingRows(t,s){var ft=document.getElementById('fType').value,fy=document.getElementById('fYear').value,o=[];for(var i=0;i<allData.length;i++){var r=allData[i];if(r.u_type!==t||r.u_sub_group!==s)continue;if(ft&&r.u_type!==ft)continue;if(fy&&r.year!==fy)continue;o.push(r);}return o;}
-function setDirty(v){isDirty=v;document.getElementById('saveBtn').disabled=!v;document.getElementById('dirtyBadge').className=v?'dirty-badge show':'dirty-badge';}
+function setDirty(v){isDirty=v;document.getElementById('saveBtn').disabled=!v||!editMode;document.getElementById('dirtyBadge').className=(v&&editMode)?'dirty-badge show':'dirty-badge';}
 
 function populateFilters(months,years){
   var ms=document.getElementById('fMonth');ms.innerHTML='<option value="">All Months</option>';
@@ -315,6 +386,7 @@ async function renderInitialTable(){
 
   for(var i=0;i<PRODUCTS.length;i++){
     var p=PRODUCTS[i],bk=p.u_type+'|'+p.u_sub_group;
+    if(selectedProducts[p.u_sub_group]===false)continue;
     var saved=savedTargets[bk];
     var ts=saved&&('target_sale' in saved)?saved.target_sale:p.ts;
     var tr=saved&&('target_realise' in saved)?saved.target_realise:p.tr;
@@ -361,12 +433,13 @@ function applyFilters(){
   drillData={};drillOpen={};drillDim={};rootDrillDim='';allExpanded=false;
   document.getElementById('expandAllBtn').innerHTML='&#9660; Expand All';
   var ft=document.getElementById('fType').value,fm=document.getElementById('fMonth').value,fy=document.getElementById('fYear').value;
-  var rows=[];for(var i=0;i<allData.length;i++){var r=allData[i];if(ft&&r.u_type!==ft)continue;if(fm&&r.month!==fm)continue;if(fy&&r.year!==fy)continue;rows.push(r);}
+  var rows=[];for(var i=0;i<allData.length;i++){var r=allData[i];if(ft&&r.u_type!==ft)continue;if(fm&&r.month!==fm)continue;if(fy&&r.year!==fy)continue;if(selectedProducts[r.u_sub_group]===false)continue;rows.push(r);}
   if(!fm){
     var agg={};for(var i=0;i<rows.length;i++){var r=rows[i],gk=r.u_type+'|'+r.u_sub_group;
       if(!agg[gk])agg[gk]={u_type:r.u_type,u_sub_group:r.u_sub_group,month:'ALL',year:fy||'',litres:0,linetotal:0,target_sale:0,target_realise:getDefTR(r.u_type,r.u_sub_group),_count:0,_nodata:false};
       var a=agg[gk];a.litres+=r.litres;a.linetotal+=r.linetotal;a.target_sale+=(r.target_sale||0);a._count++;}
     var prods=ft?PRODUCTS.filter(function(p){return p.u_type===ft;}):PRODUCTS;
+    prods=prods.filter(function(p){return selectedProducts[p.u_sub_group]!==false;});
     for(var pi=0;pi<prods.length;pi++){var pk=prods[pi].u_type+'|'+prods[pi].u_sub_group;
       if(!agg[pk]){var mc=0;var sm={};for(var mi=0;mi<allData.length;mi++){if(!sm[allData[mi].month]){sm[allData[mi].month]=true;mc++;}}
         agg[pk]={u_type:prods[pi].u_type,u_sub_group:prods[pi].u_sub_group,month:'ALL',year:fy||'',litres:0,linetotal:0,target_sale:getDefTS(prods[pi].u_type,prods[pi].u_sub_group)*mc,target_realise:getDefTR(prods[pi].u_type,prods[pi].u_sub_group),_count:0,_nodata:false};}}
@@ -376,6 +449,7 @@ function applyFilters(){
     for(var ei=0;ei<rows.length;ei++)rows[ei]._nodata=false;
     var existing={};for(var ei=0;ei<rows.length;ei++)existing[rows[ei].u_type+'|'+rows[ei].u_sub_group]=true;
     var prods2=ft?PRODUCTS.filter(function(p){return p.u_type===ft;}):PRODUCTS;
+    prods2=prods2.filter(function(p){return selectedProducts[p.u_sub_group]!==false;});
     var rowYear=(rows.length>0)?rows[0].year:'';
     for(var pi2=0;pi2<prods2.length;pi2++){var pk2=prods2[pi2].u_type+'|'+prods2[pi2].u_sub_group;
       if(!existing[pk2])rows.push({u_type:prods2[pi2].u_type,u_sub_group:prods2[pi2].u_sub_group,month:fm,year:rowYear,litres:0,linetotal:0,realise:0,target_sale:getDefTS(prods2[pi2].u_type,prods2[pi2].u_sub_group),target_realise:getDefTR(prods2[pi2].u_type,prods2[pi2].u_sub_group),_nodata:false});}
@@ -399,15 +473,15 @@ function renderTable(){
     if(showBtn){html+='<td class="sub-cell"><button class="drill-btn'+(isOpen?' open':'')+'" onclick="toggleDrill('+i+')">'+(isOpen?'\u2212':'+')+'</button>'+row.u_sub_group+'</td>';}
     else{html+='<td class="sub-cell">'+row.u_sub_group+'</td>';}
 
-    html+='<td class="ecell"><input type="number" value="'+(ts||'')+'" placeholder="0" data-f="target_sale" oninput="onEdit(this)" onfocus="this.select()"></td>';
+    html+='<td class="ecell"><input type="number" value="'+(ts||'')+'" placeholder="0" data-f="target_sale" oninput="onEdit(this)" onfocus="this.select()"'+(editMode?'':' readonly class="locked"')+'></td>';
     var ar=getAvgRealise(row);
     if(nodata){
-      html+='<td class="ecell"><input type="number" value="'+(tr||'')+'" placeholder="0" data-f="target_realise" oninput="onEdit(this)" onfocus="this.select()"></td>';
+      html+='<td class="ecell"><input type="number" value="'+(tr||'')+'" placeholder="0" data-f="target_realise" oninput="onEdit(this)" onfocus="this.select()"'+(editMode?'':' readonly class="locked"')+'></td>';
       html+='<td class="num" style="color:var(--indigo)">'+(ar?fN(ar,2):'<span class="v-dash">&mdash;</span>')+'</td>';
       html+='<td class="empty-sap">&mdash;</td><td class="empty-sap">&mdash;</td><td class="empty-sap">&mdash;</td>';
       html+='<td class="empty-sap">&mdash;</td><td class="empty-sap">&mdash;</td><td class="empty-sap">&mdash;</td>';
     }else{
-      html+='<td class="ecell"><input type="number" value="'+(tr||'')+'" placeholder="0" data-f="target_realise" oninput="onEdit(this)" onfocus="this.select()"></td>';
+      html+='<td class="ecell"><input type="number" value="'+(tr||'')+'" placeholder="0" data-f="target_realise" oninput="onEdit(this)" onfocus="this.select()"'+(editMode?'':' readonly class="locked"')+'></td>';
       html+='<td class="num" style="color:var(--indigo)">'+(ar?fN(ar,2):'<span class="v-dash">&mdash;</span>')+'</td>';
       html+='<td class="num">'+fN(row.litres)+'</td>';
       html+='<td class="num">'+fN(row.realise,2)+'</td>';
@@ -497,7 +571,7 @@ async function fetchAndExpand(productPK,uType,uSubGroup,path,drillBy){
     var result=await res.json();
     drillData[path]=result.data.sort(function(a,b){return b.litres-a.litres;});
     drillDim[path]=drillBy;drillOpen[path]=true;renderTable();
-    var dl={'U_Main_Group':'groups','State':'states','U_Chain':'chains','ItemName':'items'};
+    var dl={'U_Main_Group':'groups','State':'states','U_Chain':'chains','ItemName':'items','CardName':'customers'};
     showToast(uSubGroup+' \u2192 '+result.data.length+' '+(dl[drillBy]||drillBy),'ok');
   }catch(e){showToast('Drill error: '+e.message,'err');}
 }
@@ -570,6 +644,103 @@ function fNp(n,d){d=d||0;if(n===null||n===undefined||isNaN(n))return'—';return
 function fC(n){if(n===null||n===undefined||isNaN(n))return'&mdash;';return'\u20B9'+new Intl.NumberFormat('en-IN',{maximumFractionDigits:0}).format(Math.round(n));}
 function vc(v){return v>0?'v-pos':v<0?'v-neg':'v-zero';}
 function showToast(msg,type){var el=document.getElementById('toast');el.textContent=msg;el.className='toast toast-'+(type||'info')+' show';setTimeout(function(){el.classList.remove('show');},3500);}
+
+// ==================== EDIT MODE (PIN) ====================
+function promptEditPin(){
+  if(editMode){lockEditing();return;}
+  document.getElementById('pinModal').classList.add('show');
+  document.getElementById('pinInput').value='';
+  document.getElementById('pinError').style.display='none';
+  setTimeout(function(){document.getElementById('pinInput').focus();},100);
+}
+function closePinModal(){
+  document.getElementById('pinModal').classList.remove('show');
+  document.getElementById('pinInput').value='';
+  document.getElementById('pinError').style.display='none';
+}
+async function verifyPin(){
+  var pin=document.getElementById('pinInput').value.trim();
+  if(!pin){document.getElementById('pinError').textContent='Please enter a PIN';document.getElementById('pinError').style.display='block';return;}
+  try{
+    var res=await fetch(API+'/api/verify-pin',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin:pin})});
+    var result=await res.json();
+    if(result.verified){
+      editMode=true;closePinModal();
+      document.getElementById('editBtn').innerHTML='&#128275; Lock';
+      document.getElementById('editBtn').className='btn btn-lock';
+      document.getElementById('editIndicator').classList.add('show');
+      renderTable();
+      showToast('Edit mode enabled','ok');
+    }else{
+      document.getElementById('pinError').textContent='Incorrect PIN. Try again.';
+      document.getElementById('pinError').style.display='block';
+      document.getElementById('pinInput').value='';
+      document.getElementById('pinInput').focus();
+    }
+  }catch(e){
+    document.getElementById('pinError').textContent='Server error';
+    document.getElementById('pinError').style.display='block';
+  }
+}
+function lockEditing(){
+  if(isDirty){if(!confirm('You have unsaved changes. Lock editing anyway?'))return;}
+  editMode=false;
+  document.getElementById('editBtn').innerHTML='&#128274; Edit';
+  document.getElementById('editBtn').className='btn btn-edit';
+  document.getElementById('editIndicator').classList.remove('show');
+  renderTable();
+  showToast('Editing locked','info');
+}
+
+// ==================== PRODUCT FILTER ====================
+function buildProductFilterList(){
+  var html='';
+  var sorted=PRODUCTS.slice().sort(function(a,b){return a.u_type.localeCompare(b.u_type)||a.u_sub_group.localeCompare(b.u_sub_group);});
+  for(var i=0;i<sorted.length;i++){
+    var p=sorted[i],checked=selectedProducts[p.u_sub_group]!==false;
+    var bc=p.u_type==='PREMIUM'?'badge-prem':'badge-comm';
+    html+='<div class="pf-item"><input type="checkbox" id="pf_'+i+'" '+(checked?'checked':'')+' data-prod="'+p.u_sub_group+'"><label for="pf_'+i+'"><span class="pf-badge '+bc+'">'+p.u_type+'</span> '+p.u_sub_group+'</label></div>';
+  }
+  document.getElementById('pfList').innerHTML=html;
+}
+function toggleProductFilter(){
+  var drop=document.getElementById('pfDrop');
+  if(drop.classList.contains('show')){drop.classList.remove('show');return;}
+  buildProductFilterList();
+  drop.classList.add('show');
+}
+function pfSelectAll(){
+  var cbs=document.querySelectorAll('#pfList input[type=checkbox]');
+  for(var i=0;i<cbs.length;i++)cbs[i].checked=true;
+}
+function pfClearAll(){
+  var cbs=document.querySelectorAll('#pfList input[type=checkbox]');
+  for(var i=0;i<cbs.length;i++)cbs[i].checked=false;
+}
+function applyProductFilter(){
+  var cbs=document.querySelectorAll('#pfList input[type=checkbox]');
+  var count=0;
+  for(var i=0;i<cbs.length;i++){
+    selectedProducts[cbs[i].dataset.prod]=cbs[i].checked;
+    if(cbs[i].checked)count++;
+  }
+  document.getElementById('pfDrop').classList.remove('show');
+  // Update button text
+  var btn=document.getElementById('pfBtn'),countEl=document.getElementById('pfCount');
+  if(count===PRODUCTS.length){
+    btn.innerHTML='All Products <span class="pf-count" id="pfCount" style="display:none"></span> &#9662;';
+  }else{
+    btn.innerHTML=count+' Products <span class="pf-count" id="pfCount">'+count+'/'+PRODUCTS.length+'</span> &#9662;';
+  }
+  applyFilters();
+}
+// Close product filter dropdown on outside click
+document.addEventListener('click',function(e){
+  var wrap=document.querySelector('.prod-filter-wrap');
+  if(wrap&&!wrap.contains(e.target)){
+    document.getElementById('pfDrop').classList.remove('show');
+  }
+});
 </script>
 </body>
 </html>

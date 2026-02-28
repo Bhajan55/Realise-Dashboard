@@ -41,6 +41,13 @@ SAP_HANA_PASSWORD = "Jivo@8912"
 SAP_SCHEMA = "JIVO_OIL_HANADB"
 SERVER_PORT = 8002
 TARGETS_FILE = "targets.json"
+CONFIG_FILE = "config.json"
+
+def load_config():
+    if os.path.exists(CONFIG_FILE):
+        with open(CONFIG_FILE, "r") as f:
+            return json.load(f)
+    return {"edit_pin": "1234"}
 
 ALLOWED_SUB_GROUPS = [
     "BLENDED", "COTTON SEED", "MUSTARD", "RICE BRAN", "SLICED OLIVE",
@@ -53,9 +60,9 @@ DEFAULT_TARGETS = {
     "COMMODITY|COTTON SEED":      {"target_sale": 20000,  "target_realise": 131},
     "COMMODITY|MUSTARD":          {"target_sale": 625000, "target_realise": 145},
     "COMMODITY|RICE BRAN":        {"target_sale": 25000,  "target_realise": 130},
-    "PREMIUM|SLICED OLIVE":       {"target_sale": 0,      "target_realise": 0},
     "COMMODITY|SOYABEAN":         {"target_sale": 400000, "target_realise": 123},
     "COMMODITY|SUNFLOWER":        {"target_sale": 135000, "target_realise": 145},
+    "PREMIUM|SLICED OLIVE":       {"target_sale": 0,      "target_realise": 0},
     "PREMIUM|BLENDED":            {"target_sale": 10000,  "target_realise": 190},
     "PREMIUM|CANOLA":             {"target_sale": 350000, "target_realise": 205},
     "PREMIUM|COCONUT":            {"target_sale": 5000,   "target_realise": 449},
@@ -110,6 +117,9 @@ class DrillDownRequest(BaseModel):
     month: Optional[str] = None
     year: Optional[str] = None
     filters: Optional[dict] = None
+
+class PinVerify(BaseModel):
+    pin: str
 
 # ==================== SAP HANA ====================
 def get_sap_connection():
@@ -167,6 +177,15 @@ async def health():
         return {"status": "ok", "sap_connected": True, "sap_time": str(ts)}
     except Exception as e:
         return {"status": "error", "sap_connected": False, "error": str(e)}
+
+@app.post("/api/verify-pin")
+async def verify_pin(req: PinVerify):
+    config = load_config()
+    correct_pin = config.get("edit_pin", "1234")
+    if req.pin == correct_pin:
+        return {"status": "ok", "verified": True}
+    else:
+        return {"status": "error", "verified": False, "message": "Incorrect PIN"}
 
 @app.post("/api/sales-data")
 async def get_sales_data(params: DateRange):
@@ -326,7 +345,7 @@ async def get_historical_realise(params: DateRange):
     else: start_dt = end_dt - relativedelta(months=12)
 
     MONTHS_ORDER = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC']
-    DRILL_COLS = ["State", "U_Main_Group", "U_Chain", "ItemName"]
+    DRILL_COLS = ["State", "U_Main_Group", "U_Chain", "ItemName", "CardName"]
 
     agg = {}
     drill_agg = {}
