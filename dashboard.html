@@ -113,6 +113,26 @@ td.ccell{font-weight:500}
 .modal-box .btn-cancel{background:var(--surface2);color:var(--text2)}
 .modal-box .btn-confirm{background:var(--blue);color:#fff}
 .modal-box .pin-error{color:var(--red);font-size:11px;margin-bottom:8px;display:none}
+/* Login Screen */
+.login-screen{position:fixed;inset:0;background:linear-gradient(135deg,#1e293b 0%,#0f172a 100%);z-index:500;display:flex;justify-content:center;align-items:center}
+.login-screen.hidden{display:none}
+.login-card{background:var(--bg2);border-radius:16px;padding:36px 32px;width:360px;box-shadow:0 24px 80px rgba(0,0,0,0.4);text-align:center}
+.login-card .login-logo{width:48px;height:48px;background:linear-gradient(135deg,var(--blue),var(--purple));border-radius:12px;display:inline-flex;align-items:center;justify-content:center;font-weight:800;font-size:18px;color:#fff;margin-bottom:12px}
+.login-card h2{font-size:20px;color:var(--text);margin-bottom:2px}
+.login-card .login-sub{font-size:12px;color:var(--text3);margin-bottom:24px}
+.login-card .login-field{text-align:left;margin-bottom:14px}
+.login-card .login-field label{display:block;font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
+.login-card .login-field input{width:100%;padding:10px 12px;border:2px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit;outline:none;letter-spacing:normal;text-align:left}
+.login-card .login-field input:focus{border-color:var(--blue);box-shadow:0 0 0 3px var(--blue-glow)}
+.login-card .login-btn{width:100%;padding:11px;background:var(--blue);color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;margin-top:4px;transition:background .15s}
+.login-card .login-btn:hover{background:var(--blue2)}
+.login-card .login-btn:disabled{opacity:.5;cursor:not-allowed}
+.login-card .login-error{color:var(--red);font-size:12px;margin-top:10px;display:none}
+.user-badge{display:inline-flex;align-items:center;gap:5px;background:var(--surface);border:1px solid var(--border);padding:3px 10px;border-radius:16px;font-size:11px;font-weight:500;color:var(--text2);margin-left:8px}
+.user-badge .ub-dot{width:6px;height:6px;border-radius:50%;background:var(--green)}
+.user-badge .ub-role{color:var(--text3);font-size:10px}
+.logout-btn{background:none;border:1px solid var(--border);color:var(--text3);padding:3px 8px;border-radius:4px;font-size:10px;cursor:pointer;font-family:inherit;margin-left:4px}
+.logout-btn:hover{background:var(--red-bg);color:var(--red);border-color:var(--red)}
 /* Edit mode indicator */
 .btn-edit{background:var(--amber);color:#fff;border:none}
 .btn-edit:hover:not(:disabled){background:#b45309}
@@ -142,12 +162,31 @@ td.ecell input.locked{background:var(--surface2);color:var(--text3);cursor:not-a
 </style>
 </head>
 <body>
+<div class="login-screen" id="loginScreen">
+  <div class="login-card">
+    <div class="login-logo">JS</div>
+    <h2>Jivo Realise Dashboard</h2>
+    <div class="login-sub">Enter your credentials to continue</div>
+    <div class="login-field">
+      <label>Username</label>
+      <input type="text" id="loginUser" placeholder="Enter username" onkeydown="if(event.key==='Enter')document.getElementById('loginPass').focus()">
+    </div>
+    <div class="login-field">
+      <label>Password</label>
+      <input type="password" id="loginPass" placeholder="Enter password" onkeydown="if(event.key==='Enter')doLogin()">
+    </div>
+    <button class="login-btn" id="loginBtn" onclick="doLogin()">Sign In</button>
+    <div class="login-error" id="loginError"></div>
+  </div>
+</div>
+<div id="appWrap" style="display:none">
 <div class="header">
   <div class="header-left">
     <div class="logo-icon">JS</div>
-    <h1>Realise Dashboard <span>REPORT_SALES_ANALYSIS</span> <span class="vbadge">v9</span></h1>
+    <h1>Realise Dashboard <span>REPORT_SALES_ANALYSIS</span> <span class="vbadge">v10</span></h1>
   </div>
   <div class="status-pill"><span class="dot dot-red" id="sDot"></span><span id="sTxt">Checking...</span></div>
+  <span class="user-badge" id="userBadge" style="display:none"><span class="ub-dot"></span><span id="ubName"></span> <span class="ub-role" id="ubRole"></span><button class="logout-btn" onclick="doLogout()">Logout</button></span>
 </div>
 <div class="controls">
   <div class="cg"><label>From</label><input type="date" id="dFrom"></div>
@@ -197,15 +236,15 @@ td.ecell input.locked{background:var(--surface2);color:var(--text3);cursor:not-a
     <button class="btn btn-edit" id="editBtn" onclick="promptEditPin()">&#128274; Edit</button>
     <span class="dirty-badge" id="dirtyBadge">Unsaved changes</span>
     <button class="btn btn-save" id="saveBtn" disabled onclick="saveTargets()">&#128190; Save</button>
-    <button class="btn btn-ghost" onclick="exportCSV()">&#11015; Export CSV</button>
+    <button class="btn btn-ghost" id="exportXlsBtn" onclick="exportExcel()">&#11015; Export Excel</button>
   </div>
 </div>
 <div class="summary">
   <div class="scard"><div class="sl">Target Wtd Realise</div><div class="sv" id="sTWR">&mdash;</div></div>
   <div class="scard"><div class="sl">Net Realise</div><div class="sv" id="sNR">&mdash;</div></div>
-  <div class="scard"><div class="sl">Target Sales</div><div class="sv" id="sT">&mdash;</div></div>
-  <div class="scard"><div class="sl">Target vs Actual</div><div class="sv" id="sD">&mdash;</div></div>
+  <div class="scard"><div class="sl">Target Litres</div><div class="sv" id="sT">&mdash;</div></div>
   <div class="scard"><div class="sl">Actual Litres</div><div class="sv" id="sL">&mdash;</div></div>
+  <div class="scard"><div class="sl">Target vs Actual</div><div class="sv" id="sD">&mdash;</div></div>
   <div class="scard"><div class="sl">Line Total &#8377;</div><div class="sv" id="sLT">&mdash;</div></div>
   <div class="scard"><div class="sl">Products</div><div class="sv" id="sR">&mdash;</div></div>
 </div>
@@ -238,6 +277,7 @@ td.ecell input.locked{background:var(--surface2);color:var(--text3);cursor:not-a
 </div>
 <div class="overlay" id="ov"><div class="spin"></div><div style="color:var(--text2);font-weight:500;font-size:13px">Fetching from SAP HANA...</div></div>
 <div class="toast" id="toast"></div>
+</div><!-- /appWrap -->
 <div class="modal-overlay" id="pinModal">
   <div class="modal-box">
     <h3>&#128274; Enter Edit PIN</h3>
@@ -282,9 +322,11 @@ var allData=[],filtered=[],dataFetched=false,isDirty=false,modifiedRealKeys=new 
 var drillData={},drillOpen={},drillDim={},rootDrillDim='';
 var avgRealiseData={},avgRealiseDrill={},avgPeriod='';
 var editMode=false;
-var selectedProducts={}; // key=product name, value=true/false
+var currentUser=null; // {username, role, type_filter, can_edit, display_name}
+var selectedProducts={}; // key=TYPE|PRODUCT, value=true/false
 // Init all products as selected
-for(var pi=0;pi<PRODUCTS.length;pi++)selectedProducts[PRODUCTS[pi].u_sub_group]=true;
+for(var pi=0;pi<PRODUCTS.length;pi++)selectedProducts[PRODUCTS[pi].u_type+'|'+PRODUCTS[pi].u_sub_group]=true;
+function isProdSelected(type,sub){return selectedProducts[type+'|'+sub]!==false;}
 
 function getDrillBy(){return document.getElementById('fDrill').value;}
 function productKey(r){return r.u_type+'|'+r.u_sub_group;}
@@ -359,7 +401,12 @@ document.addEventListener('DOMContentLoaded',function(){
   var n=new Date();
   document.getElementById('dFrom').value=n.getFullYear()+'-'+String(n.getMonth()+1).padStart(2,'0')+'-01';
   document.getElementById('dTo').value=n.toISOString().split('T')[0];
-  checkHealth();renderInitialTable();
+  checkHealth();
+  if(checkSession()){
+    renderInitialTable();
+  }else{
+    setTimeout(function(){document.getElementById('loginUser').focus();},200);
+  }
 });
 
 async function checkHealth(){try{var r=await fetch(API+'/health');var d=await r.json();document.getElementById('sDot').className=d.sap_connected?'dot dot-green':'dot dot-red';document.getElementById('sTxt').textContent=d.sap_connected?'SAP Connected':'SAP Error';}catch(e){document.getElementById('sDot').className='dot dot-red';document.getElementById('sTxt').textContent='Server Offline';}}
@@ -384,9 +431,11 @@ async function renderInitialTable(){
     if(res.ok)savedTargets=await res.json();
   }catch(e){console.log('[INIT] Could not load saved targets:',e);}
 
+  var roleType=currentUser&&currentUser.type_filter?currentUser.type_filter:'';
   for(var i=0;i<PRODUCTS.length;i++){
     var p=PRODUCTS[i],bk=p.u_type+'|'+p.u_sub_group;
-    if(selectedProducts[p.u_sub_group]===false)continue;
+    if(!isProdSelected(p.u_type,p.u_sub_group))continue;
+    if(roleType&&p.u_type!==roleType)continue;
     var saved=savedTargets[bk];
     var ts=saved&&('target_sale' in saved)?saved.target_sale:p.ts;
     var tr=saved&&('target_realise' in saved)?saved.target_realise:p.tr;
@@ -421,7 +470,7 @@ async function loadData(){
     var cm=currentMonth(),ms=document.getElementById('fMonth'),found=false;
     for(var j=0;j<ms.options.length;j++){if(ms.options[j].value===cm){found=true;break;}}
     if(found)ms.value=cm;else ms.value='';
-    document.getElementById('fType').value='';document.getElementById('fYear').value='';
+    document.getElementById('fType').value=currentUser&&currentUser.type_filter?currentUser.type_filter:'';document.getElementById('fYear').value='';
     applyFilters();
     showToast(allData.length+' rows loaded — showing '+(found?cm:'All Months'),'ok');
   }catch(e){showToast('Error: '+e.message,'err');}
@@ -433,13 +482,13 @@ function applyFilters(){
   drillData={};drillOpen={};drillDim={};rootDrillDim='';allExpanded=false;
   document.getElementById('expandAllBtn').innerHTML='&#9660; Expand All';
   var ft=document.getElementById('fType').value,fm=document.getElementById('fMonth').value,fy=document.getElementById('fYear').value;
-  var rows=[];for(var i=0;i<allData.length;i++){var r=allData[i];if(ft&&r.u_type!==ft)continue;if(fm&&r.month!==fm)continue;if(fy&&r.year!==fy)continue;if(selectedProducts[r.u_sub_group]===false)continue;rows.push(r);}
+  var rows=[];for(var i=0;i<allData.length;i++){var r=allData[i];if(ft&&r.u_type!==ft)continue;if(fm&&r.month!==fm)continue;if(fy&&r.year!==fy)continue;if(!isProdSelected(r.u_type,r.u_sub_group))continue;rows.push(r);}
   if(!fm){
     var agg={};for(var i=0;i<rows.length;i++){var r=rows[i],gk=r.u_type+'|'+r.u_sub_group;
       if(!agg[gk])agg[gk]={u_type:r.u_type,u_sub_group:r.u_sub_group,month:'ALL',year:fy||'',litres:0,linetotal:0,target_sale:0,target_realise:getDefTR(r.u_type,r.u_sub_group),_count:0,_nodata:false};
       var a=agg[gk];a.litres+=r.litres;a.linetotal+=r.linetotal;a.target_sale+=(r.target_sale||0);a._count++;}
     var prods=ft?PRODUCTS.filter(function(p){return p.u_type===ft;}):PRODUCTS;
-    prods=prods.filter(function(p){return selectedProducts[p.u_sub_group]!==false;});
+    prods=prods.filter(function(p){return isProdSelected(p.u_type,p.u_sub_group);});
     for(var pi=0;pi<prods.length;pi++){var pk=prods[pi].u_type+'|'+prods[pi].u_sub_group;
       if(!agg[pk]){var mc=0;var sm={};for(var mi=0;mi<allData.length;mi++){if(!sm[allData[mi].month]){sm[allData[mi].month]=true;mc++;}}
         agg[pk]={u_type:prods[pi].u_type,u_sub_group:prods[pi].u_sub_group,month:'ALL',year:fy||'',litres:0,linetotal:0,target_sale:getDefTS(prods[pi].u_type,prods[pi].u_sub_group)*mc,target_realise:getDefTR(prods[pi].u_type,prods[pi].u_sub_group),_count:0,_nodata:false};}}
@@ -449,7 +498,7 @@ function applyFilters(){
     for(var ei=0;ei<rows.length;ei++)rows[ei]._nodata=false;
     var existing={};for(var ei=0;ei<rows.length;ei++)existing[rows[ei].u_type+'|'+rows[ei].u_sub_group]=true;
     var prods2=ft?PRODUCTS.filter(function(p){return p.u_type===ft;}):PRODUCTS;
-    prods2=prods2.filter(function(p){return selectedProducts[p.u_sub_group]!==false;});
+    prods2=prods2.filter(function(p){return isProdSelected(p.u_type,p.u_sub_group);});
     var rowYear=(rows.length>0)?rows[0].year:'';
     for(var pi2=0;pi2<prods2.length;pi2++){var pk2=prods2[pi2].u_type+'|'+prods2[pi2].u_sub_group;
       if(!existing[pk2])rows.push({u_type:prods2[pi2].u_type,u_sub_group:prods2[pi2].u_sub_group,month:fm,year:rowYear,litres:0,linetotal:0,realise:0,target_sale:getDefTS(prods2[pi2].u_type,prods2[pi2].u_sub_group),target_realise:getDefTR(prods2[pi2].u_type,prods2[pi2].u_sub_group),_nodata:false});}
@@ -630,15 +679,55 @@ function updateSummary(){
   if(dataFetched){d.textContent=fNp(t.cI);d.className='sv '+(t.cI>=0?'pos':'neg');}else{d.textContent='—';d.className='sv';}
   document.getElementById('sR').textContent=filtered.length;
 }
-function exportCSV(){
-  if(!filtered.length){showToast('No data','err');return;}
-  var h=['Type','Product','Tgt_Ltrs','Tgt_Rate','Avg_Realise','Act_Ltrs','Act_Realise','Revenue','Variance','Recovery','Rate_Impact'];
-  var csv=h.join(',')+'\n';
-  for(var i=0;i<filtered.length;i++){var r=filtered[i],c=r._nodata?{I:0,J:0,K:0}:calc(r.litres,r.linetotal,r.realise,r.target_sale||0,r.target_realise||0);var ar=getAvgRealise(r);
-    csv+=[r.u_type,r.u_sub_group,r.target_sale||0,r.target_realise||0,ar?ar.toFixed(2):'',r.litres||0,r.realise||0,r.linetotal||0,c.I.toFixed(2),c.J.toFixed(2),c.K.toFixed(2)].join(',')+'\n';}
-  var a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
-  a.download='Sales_'+document.getElementById('dFrom').value+'_'+document.getElementById('dTo').value+'.csv';a.click();showToast('Exported','ok');
+
+async function exportExcel() {
+  if (!dataFetched) {
+    showToast('Fetch data first, then export', 'err');
+    return;
+  }
+
+  var btn = document.getElementById('exportXlsBtn');
+  btn.disabled = true;
+  btn.innerHTML = '&#8987; Exporting...';
+
+  var sd = document.getElementById('dFrom').value;
+  var ed = document.getElementById('dTo').value;
+
+  try {
+    var res = await fetch(API + '/api/export-excel', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ start_date: sd, end_date: ed })
+    });
+
+    if (!res.ok) {
+      var err = await res.json();
+      throw new Error(err.detail || 'Export failed');
+    }
+
+    // Stream the binary blob and trigger browser download
+    var blob = await res.blob();
+    var url  = URL.createObjectURL(blob);
+    var a    = document.createElement('a');
+    a.href     = url;
+    a.download = 'Jivo_Sales_' + sd + '_to_' + ed + '.xlsx';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    showToast('Excel exported — 2 sheets (Raw + Summary)', 'ok');
+
+  } catch (e) {
+    showToast('Export error: ' + e.message, 'err');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '&#11015; Export Excel';
+  }
 }
+
+
+
 function fN(n,d){d=d||0;if(n===null||n===undefined||isNaN(n))return'&mdash;';return new Intl.NumberFormat('en-IN',{minimumFractionDigits:d,maximumFractionDigits:d}).format(n);}
 function fNp(n,d){d=d||0;if(n===null||n===undefined||isNaN(n))return'—';return new Intl.NumberFormat('en-IN',{minimumFractionDigits:d,maximumFractionDigits:d}).format(n);}
 function fC(n){if(n===null||n===undefined||isNaN(n))return'&mdash;';return'\u20B9'+new Intl.NumberFormat('en-IN',{maximumFractionDigits:0}).format(Math.round(n));}
@@ -697,9 +786,9 @@ function buildProductFilterList(){
   var html='';
   var sorted=PRODUCTS.slice().sort(function(a,b){return a.u_type.localeCompare(b.u_type)||a.u_sub_group.localeCompare(b.u_sub_group);});
   for(var i=0;i<sorted.length;i++){
-    var p=sorted[i],checked=selectedProducts[p.u_sub_group]!==false;
+    var p=sorted[i],pk=p.u_type+'|'+p.u_sub_group,checked=selectedProducts[pk]!==false;
     var bc=p.u_type==='PREMIUM'?'badge-prem':'badge-comm';
-    html+='<div class="pf-item"><input type="checkbox" id="pf_'+i+'" '+(checked?'checked':'')+' data-prod="'+p.u_sub_group+'"><label for="pf_'+i+'"><span class="pf-badge '+bc+'">'+p.u_type+'</span> '+p.u_sub_group+'</label></div>';
+    html+='<div class="pf-item"><input type="checkbox" id="pf_'+i+'" '+(checked?'checked':'')+' data-prod="'+pk+'"><label for="pf_'+i+'"><span class="pf-badge '+bc+'">'+p.u_type+'</span> '+p.u_sub_group+'</label></div>';
   }
   document.getElementById('pfList').innerHTML=html;
 }
@@ -725,8 +814,7 @@ function applyProductFilter(){
     if(cbs[i].checked)count++;
   }
   document.getElementById('pfDrop').classList.remove('show');
-  // Update button text
-  var btn=document.getElementById('pfBtn'),countEl=document.getElementById('pfCount');
+  var btn=document.getElementById('pfBtn');
   if(count===PRODUCTS.length){
     btn.innerHTML='All Products <span class="pf-count" id="pfCount" style="display:none"></span> &#9662;';
   }else{
@@ -741,6 +829,92 @@ document.addEventListener('click',function(e){
     document.getElementById('pfDrop').classList.remove('show');
   }
 });
+
+// ==================== LOGIN / LOGOUT / ROLES ====================
+async function doLogin(){
+  var uEl=document.getElementById('loginUser'),pEl=document.getElementById('loginPass'),errEl=document.getElementById('loginError');
+  var u=uEl.value.trim(),p=pEl.value;
+  if(!u||!p){errEl.textContent='Enter both username and password';errEl.style.display='block';return;}
+  var btn=document.getElementById('loginBtn');btn.disabled=true;btn.textContent='Signing in...';errEl.style.display='none';
+  try{
+    var res=await fetch(API+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:u,password:p})});
+    var result=await res.json();
+    if(result.status==='ok'){
+      currentUser=result;
+      sessionStorage.setItem('jivo_user',JSON.stringify(result));
+      applyRoleRestrictions();
+      document.getElementById('loginScreen').classList.add('hidden');
+      document.getElementById('appWrap').style.display='';
+      showToast('Welcome, '+result.display_name,'ok');
+    }else{
+      errEl.textContent=result.message||'Login failed';
+      errEl.style.display='block';
+      pEl.value='';pEl.focus();
+    }
+  }catch(e){errEl.textContent='Server error';errEl.style.display='block';}
+  finally{btn.disabled=false;btn.textContent='Sign In';}
+}
+
+function doLogout(){
+  currentUser=null;
+  sessionStorage.removeItem('jivo_user');
+  editMode=false;
+  document.getElementById('appWrap').style.display='none';
+  document.getElementById('loginScreen').classList.remove('hidden');
+  document.getElementById('loginUser').value='';
+  document.getElementById('loginPass').value='';
+  document.getElementById('loginError').style.display='none';
+  document.getElementById('userBadge').style.display='none';
+  setTimeout(function(){document.getElementById('loginUser').focus();},100);
+}
+
+function applyRoleRestrictions(){
+  if(!currentUser)return;
+  var u=currentUser;
+  // Show user badge
+  document.getElementById('ubName').textContent=u.display_name;
+  document.getElementById('ubRole').textContent=u.role==='admin'?'Admin':u.type_filter||'Viewer';
+  document.getElementById('userBadge').style.display='';
+
+  // Type filter lock
+  var fType=document.getElementById('fType');
+  if(u.type_filter){
+    fType.value=u.type_filter;
+    fType.disabled=true;
+    fType.style.opacity='0.6';
+  }else{
+    fType.value='';
+    fType.disabled=false;
+    fType.style.opacity='1';
+  }
+
+  // Edit button visibility
+  if(u.can_edit){
+    document.getElementById('editBtn').style.display='';
+  }else{
+    document.getElementById('editBtn').style.display='none';
+    editMode=false;
+    document.getElementById('editIndicator').classList.remove('show');
+  }
+
+  // Re-render with role applied
+  if(dataFetched){applyFilters();}else{renderInitialTable();}
+}
+
+// Check session on load (persist across page refresh)
+function checkSession(){
+  var saved=sessionStorage.getItem('jivo_user');
+  if(saved){
+    try{
+      currentUser=JSON.parse(saved);
+      applyRoleRestrictions();
+      document.getElementById('loginScreen').classList.add('hidden');
+      document.getElementById('appWrap').style.display='';
+      return true;
+    }catch(e){sessionStorage.removeItem('jivo_user');}
+  }
+  return false;
+}
 </script>
 </body>
 </html>

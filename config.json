@@ -1,4 +1,27 @@
 {
   "edit_pin": "gill",
-  "admin_note": "Change edit_pin to update the PIN required to edit targets. Restart server after changing."
+  "users": {
+    "admin": {
+      "password": "jivoadmin",
+      "role": "admin",
+      "type_filter": "",
+      "can_edit": true,
+      "display_name": "Administrator"
+    },
+    "commodity": {
+      "password": "commodity",
+      "role": "viewer",
+      "type_filter": "COMMODITY",
+      "can_edit": false,
+      "display_name": "Commodity Team"
+    },
+    "premium": {
+      "password": "premium",
+      "role": "viewer",
+      "type_filter": "PREMIUM",
+      "can_edit": false,
+      "display_name": "Premium Team"
+    }
+  },
+  "admin_note": "Add/remove users here. role: 'admin' = full access, 'viewer' = restricted. type_filter: '' = all types, 'COMMODITY' or 'PREMIUM' = locked to that type. can_edit: true/false. Restart server after changes."
 }

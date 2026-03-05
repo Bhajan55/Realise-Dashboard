@@ -60,9 +60,9 @@ DEFAULT_TARGETS = {
     "COMMODITY|COTTON SEED":      {"target_sale": 20000,  "target_realise": 131},
     "COMMODITY|MUSTARD":          {"target_sale": 625000, "target_realise": 145},
     "COMMODITY|RICE BRAN":        {"target_sale": 25000,  "target_realise": 130},
+    "PREMIUM|SLICED OLIVE":       {"target_sale": 0,      "target_realise": 0},
     "COMMODITY|SOYABEAN":         {"target_sale": 400000, "target_realise": 123},
     "COMMODITY|SUNFLOWER":        {"target_sale": 135000, "target_realise": 145},
-    "PREMIUM|SLICED OLIVE":       {"target_sale": 0,      "target_realise": 0},
     "PREMIUM|BLENDED":            {"target_sale": 10000,  "target_realise": 190},
     "PREMIUM|CANOLA":             {"target_sale": 350000, "target_realise": 205},
     "PREMIUM|COCONUT":            {"target_sale": 5000,   "target_realise": 449},
@@ -120,6 +120,10 @@ class DrillDownRequest(BaseModel):
 
 class PinVerify(BaseModel):
     pin: str
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
 
 # ==================== SAP HANA ====================
 def get_sap_connection():
@@ -187,6 +191,24 @@ async def verify_pin(req: PinVerify):
         return {"status": "ok", "verified": True}
     else:
         return {"status": "error", "verified": False, "message": "Incorrect PIN"}
+
+@app.post("/api/login")
+async def login(req: LoginRequest):
+    config = load_config()
+    users = config.get("users", {})
+    user = users.get(req.username.lower().strip())
+    if not user:
+        return {"status": "error", "message": "Invalid username"}
+    if user.get("password") != req.password:
+        return {"status": "error", "message": "Incorrect password"}
+    return {
+        "status": "ok",
+        "username": req.username.lower().strip(),
+        "role": user.get("role", "viewer"),
+        "type_filter": user.get("type_filter", ""),
+        "can_edit": user.get("can_edit", False),
+        "display_name": user.get("display_name", req.username)
+    }
 
 @app.post("/api/sales-data")
 async def get_sales_data(params: DateRange):
@@ -459,6 +481,185 @@ async def save_targets(params: BulkTargetUpdate):
 @app.get("/api/targets")
 async def get_targets():
     return load_targets()
+
+# ==================== EXCEL EXPORT ====================
+# ADD THIS ENDPOINT to server.py — paste just before the final:
+#   if __name__ == "__main__":
+
+@app.post("/api/export-excel")
+async def export_excel(params: DateRange):
+    """
+    Two-sheet Excel export:
+      Sheet 1 — Raw SAP Data   : every row from REPORT_SALES_ANALYSIS (all columns)
+      Sheet 2 — Summary        : grouped/aggregated view matching the dashboard table
+    Uses the in-memory cache populated by /api/sales-data.
+    """
+    try:
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill, Alignment
+        from openpyxl.utils import get_column_letter
+        from fastapi.responses import StreamingResponse
+        import io
+
+        if not _cache["raw_data"]:
+            raise HTTPException(400, "No cached data — click Fetch Data first")
+
+        wb = openpyxl.Workbook()
+
+        # ── SHARED STYLE HELPERS ─────────────────────────────────────────────
+        def hdr_cell(ws, row, col, value, hex_bg="1E3A5F"):
+            c = ws.cell(row=row, column=col, value=value)
+            c.fill   = PatternFill("solid", fgColor=hex_bg)
+            c.font   = Font(color="FFFFFF", bold=True, size=10)
+            c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            return c
+
+        # ── SHEET 1 : RAW SAP DATA (plain — no formatting for speed) ────────
+        ws1       = wb.active
+        ws1.title = "Raw SAP Data"
+
+        columns  = _cache["columns"]
+        raw_data = _cache["raw_data"]
+
+        # Bold header row only — no fill, no colours
+        bold = Font(bold=True)
+        for ci, col in enumerate(columns, 1):
+            c = ws1.cell(row=1, column=ci, value=col)
+            c.font = bold
+
+        # Data rows — dates coerced to strings, zero styling applied
+        for ri, row in enumerate(raw_data, 2):
+            for ci, col in enumerate(columns, 1):
+                val = row.get(col)
+                if isinstance(val, (datetime, date)):
+                    val = val.strftime("%Y-%m-%d")
+                ws1.cell(row=ri, column=ci, value=val)
+
+        ws1.freeze_panes    = "A2"
+        ws1.auto_filter.ref = f"A1:{get_column_letter(len(columns))}{len(raw_data)+1}"
+
+        # ── SHEET 2 : SUMMARY ────────────────────────────────────────────────
+        ws2       = wb.create_sheet("Summary")
+        ws2.row_dimensions[1].height = 30
+        ws2.row_dimensions[2].height = 22
+
+        targets = load_targets()
+        grouped = {}
+
+        for d in raw_data:
+            u_type    = str(d.get("U_TYPE",      "")).strip().upper()
+            u_sub     = str(d.get("U_Sub_Group", "")).strip().upper()
+            item_name = str(d.get("ItemName", "") or "").strip().upper()
+            u_type, u_sub = reclassify_item(u_type, u_sub, item_name)
+            if u_sub not in ALLOWED_SUB_GROUPS:
+                continue
+
+            litres   = float(d.get("Liter",     0) or 0)
+            linetotal= float(d.get("LineTotal",  0) or 0)
+            month, year = parse_doc_date(d.get("DocDate", ""))
+
+            base_key  = f"{u_type}|{u_sub}"
+            group_key = f"{u_type}|{u_sub}|{month}|{year}"
+
+            if group_key not in grouped:
+                saved    = targets.get(base_key, {})
+                defaults = DEFAULT_TARGETS.get(base_key, {"target_sale": 0, "target_realise": 0})
+                ts = saved.get("target_sale",    defaults["target_sale"])
+                tr = saved.get("target_realise", defaults["target_realise"])
+                grouped[group_key] = {
+                    "u_type": u_type, "u_sub_group": u_sub,
+                    "month": month,   "year": year,
+                    "litres": 0, "linetotal": 0,
+                    "target_sale": ts, "target_realise": tr,
+                }
+            grouped[group_key]["litres"]    += litres
+            grouped[group_key]["linetotal"] += linetotal
+
+        summary_rows = []
+        for g in grouped.values():
+            g["litres"]    = round(g["litres"],    2)
+            g["linetotal"] = round(g["linetotal"], 2)
+            g["realise"]   = round(g["linetotal"] / g["litres"], 2) if g["litres"] > 0 else 0
+            g["variance"]  = round(g["litres"] - g["target_sale"], 2)
+            # Recovery rate: break-even realise needed if short on litres
+            if g["variance"] < 0 and g["litres"] > 0:
+                g["recovery_rate"] = round(
+                    -(((g["target_sale"] * g["target_realise"]) - g["linetotal"]) / g["variance"]), 2
+                )
+            else:
+                g["recovery_rate"] = None
+            # Rate impact: extra revenue from price beat (only when litres exceeded target)
+            if g["litres"] > g["target_sale"] and g["target_realise"] > 0:
+                g["rate_impact"] = round((g["realise"] - g["target_realise"]) * g["litres"], 2)
+            else:
+                g["rate_impact"] = None
+            summary_rows.append(g)
+
+        summary_rows.sort(key=lambda x: (x["u_type"], x["u_sub_group"], x["year"], x["month"]))
+
+        # ── Summary column definitions ─────────────────────────────────────
+        # (label, dict_key, hex_color_group, width, number_format)
+        SUM_COLS = [
+            ("Type",          "u_type",        "1D4ED8", 13,  "@"                        ),
+            ("Product",       "u_sub_group",   "1D4ED8", 24,  "@"                        ),
+            ("Month",         "month",         "1D4ED8",  8,  "@"                        ),
+            ("Year",          "year",          "1D4ED8",  8,  "@"                        ),
+            ("Target Ltrs",   "target_sale",   "B45309", 14,  "#,##0"                    ),
+            ("Target Rate",   "target_realise","B45309", 13,  "#,##0.00"                 ),
+            ("Actual Ltrs",   "litres",        "1D4ED8", 14,  "#,##0.00"                 ),
+            ("Act Realise",   "realise",       "1D4ED8", 13,  "#,##0.00"                 ),
+            ("Revenue ₹",     "linetotal",     "1D4ED8", 18,  '₹#,##0'                   ),
+            ("Variance",      "variance",      "065F46", 14,  '#,##0.00;[Red]-#,##0.00'  ),
+            ("Recovery Rate", "recovery_rate", "065F46", 15,  "#,##0.00"                 ),
+            ("Rate Impact ₹", "rate_impact",   "065F46", 16,  '₹#,##0;[Red]-₹#,##0'     ),
+        ]
+
+        for ci, (label, _, hex_bg, width, _fmt) in enumerate(SUM_COLS, 1):
+            hdr_cell(ws2, 1, ci, label, hex_bg)
+            ws2.column_dimensions[get_column_letter(ci)].width = width
+
+        green_font = Font(color="065F46", bold=True)
+        red_font   = Font(color="991B1B", bold=True)
+
+        for ri, row in enumerate(summary_rows, 2):
+            alt_fill = PatternFill("solid", fgColor="F0F9FF") if ri % 2 == 0 else None
+            for ci, (_, key, _, _, num_fmt) in enumerate(SUM_COLS, 1):
+                val = row.get(key)
+                c   = ws2.cell(row=ri, column=ci, value=val)
+                c.number_format = num_fmt
+                c.alignment = Alignment(
+                    horizontal="right" if ci >= 5 else "left",
+                    vertical="center"
+                )
+                if alt_fill:
+                    c.fill = alt_fill
+                # Colour variance column
+                if key == "variance" and val is not None:
+                    c.font = green_font if val >= 0 else red_font
+
+        ws2.freeze_panes    = "A2"
+        ws2.auto_filter.ref = f"A1:{get_column_letter(len(SUM_COLS))}{len(summary_rows)+1}"
+
+        # ── Stream back as .xlsx ──────────────────────────────────────────────
+        buf = io.BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+
+        fname = f"Jivo_Sales_{params.start_date}_to_{params.end_date}.xlsx"
+        print(f"[EXPORT] {len(raw_data)} raw rows | {len(summary_rows)} summary rows → {fname}")
+
+        return StreamingResponse(
+            buf,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        raise HTTPException(500, f"Export failed: {str(e)}")
+
 
 # ==================== RUN ====================
 if __name__ == "__main__":
