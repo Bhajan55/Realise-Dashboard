@@ -402,9 +402,8 @@ document.addEventListener('DOMContentLoaded',function(){
   document.getElementById('dFrom').value=n.getFullYear()+'-'+String(n.getMonth()+1).padStart(2,'0')+'-01';
   document.getElementById('dTo').value=n.toISOString().split('T')[0];
   checkHealth();
-  if(checkSession()){
-    renderInitialTable();
-  }else{
+  checkSession();
+  if(!currentUser){
     setTimeout(function(){document.getElementById('loginUser').focus();},200);
   }
 });
