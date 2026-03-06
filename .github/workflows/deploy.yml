@@ -1,0 +1,19 @@
+name: Deploy Realise Dashboard
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Pull Latest Code on Server
+        run: |
+          ssh USER@SERVER_IP "cd C:\projects\realise-dashboard && git pull origin main"
