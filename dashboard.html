@@ -71,7 +71,7 @@ tbody td{padding:5px 6px;border-bottom:1px solid var(--border);font-variant-nume
 .badge-comm{background:var(--blue-glow);color:var(--cyan);border:1px solid rgba(8,145,178,0.15)}
 .sub-cell{font-weight:500}
 td.ecell{padding:2px 2px;width:1%;white-space:nowrap}
-td.ecell input{width:80px;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:3px 4px;border-radius:4px;font-size:13px;font-family:inherit;text-align:right;outline:none;font-variant-numeric:tabular-nums}
+td.ecell input{width:85px;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:3px 4px;border-radius:4px;font-size:14px;font-weight:900;font-family:inherit;text-align:right;outline:none;font-variant-numeric:tabular-nums}
 td.ecell input:focus{border-color:var(--amber);box-shadow:0 0 0 2px var(--amber-bg);background:#fff}
 td.ccell{font-weight:500}
 .v-pos{color:var(--green)}.v-neg{color:var(--red)}.v-zero{color:var(--text3)}
@@ -236,7 +236,7 @@ td.ecell input.locked{background:var(--surface2);color:var(--text3);cursor:not-a
     <button class="btn btn-edit" id="editBtn" onclick="promptEditPin()">&#128274; Edit</button>
     <span class="dirty-badge" id="dirtyBadge">Unsaved changes</span>
     <button class="btn btn-save" id="saveBtn" disabled onclick="saveTargets()">&#128190; Save</button>
-    <button class="btn btn-ghost" id="exportXlsBtn" onclick="exportExcel()">&#11015; Export Excel</button>
+    <button class="btn btn-ghost" onclick="exportCSV()">&#11015; Export CSV</button>
   </div>
 </div>
 <div class="summary">
@@ -402,8 +402,7 @@ document.addEventListener('DOMContentLoaded',function(){
   document.getElementById('dFrom').value=n.getFullYear()+'-'+String(n.getMonth()+1).padStart(2,'0')+'-01';
   document.getElementById('dTo').value=n.toISOString().split('T')[0];
   checkHealth();
-  checkSession();
-  if(!currentUser){
+  if(!checkSession()){
     setTimeout(function(){document.getElementById('loginUser').focus();},200);
   }
 });
@@ -440,6 +439,7 @@ async function renderInitialTable(){
     var tr=saved&&('target_realise' in saved)?saved.target_realise:p.tr;
     filtered.push({u_type:p.u_type,u_sub_group:p.u_sub_group,month:'',year:'',litres:0,linetotal:0,realise:0,target_sale:ts,target_realise:tr,_nodata:true});
   }
+  filtered.sort(function(a,b){return (b.u_type.localeCompare(a.u_type))||((a.target_sale||0)<(b.target_sale||0)?1:(a.target_sale||0)>(b.target_sale||0)?-1:0);});
   renderTable();updateSummary();
 }
 
@@ -492,7 +492,7 @@ function applyFilters(){
       if(!agg[pk]){var mc=0;var sm={};for(var mi=0;mi<allData.length;mi++){if(!sm[allData[mi].month]){sm[allData[mi].month]=true;mc++;}}
         agg[pk]={u_type:prods[pi].u_type,u_sub_group:prods[pi].u_sub_group,month:'ALL',year:fy||'',litres:0,linetotal:0,target_sale:getDefTS(prods[pi].u_type,prods[pi].u_sub_group)*mc,target_realise:getDefTR(prods[pi].u_type,prods[pi].u_sub_group),_count:0,_nodata:false};}}
     var vals=[],keys=Object.keys(agg);for(var k=0;k<keys.length;k++){var g=agg[keys[k]];g.realise=g.litres>0?Math.round((g.linetotal/g.litres)*100)/100:0;vals.push(g);}
-    filtered=vals.sort(function(a,b){return a.u_type.localeCompare(b.u_type)||a.u_sub_group.localeCompare(b.u_sub_group);});
+    filtered=vals.sort(function(a,b){return (b.u_type.localeCompare(a.u_type))||((a.target_sale||0)<(b.target_sale||0)?1:(a.target_sale||0)>(b.target_sale||0)?-1:0);});
   }else{
     for(var ei=0;ei<rows.length;ei++)rows[ei]._nodata=false;
     var existing={};for(var ei=0;ei<rows.length;ei++)existing[rows[ei].u_type+'|'+rows[ei].u_sub_group]=true;
@@ -501,7 +501,7 @@ function applyFilters(){
     var rowYear=(rows.length>0)?rows[0].year:'';
     for(var pi2=0;pi2<prods2.length;pi2++){var pk2=prods2[pi2].u_type+'|'+prods2[pi2].u_sub_group;
       if(!existing[pk2])rows.push({u_type:prods2[pi2].u_type,u_sub_group:prods2[pi2].u_sub_group,month:fm,year:rowYear,litres:0,linetotal:0,realise:0,target_sale:getDefTS(prods2[pi2].u_type,prods2[pi2].u_sub_group),target_realise:getDefTR(prods2[pi2].u_type,prods2[pi2].u_sub_group),_nodata:false});}
-    filtered=rows.sort(function(a,b){return a.u_type.localeCompare(b.u_type)||a.u_sub_group.localeCompare(b.u_sub_group);});
+    filtered=rows.sort(function(a,b){return (b.u_type.localeCompare(a.u_type))||((a.target_sale||0)<(b.target_sale||0)?1:(a.target_sale||0)>(b.target_sale||0)?-1:0);});
   }
   renderTable();updateSummary();
 }
@@ -678,55 +678,15 @@ function updateSummary(){
   if(dataFetched){d.textContent=fNp(t.cI);d.className='sv '+(t.cI>=0?'pos':'neg');}else{d.textContent='—';d.className='sv';}
   document.getElementById('sR').textContent=filtered.length;
 }
-
-async function exportExcel() {
-  if (!dataFetched) {
-    showToast('Fetch data first, then export', 'err');
-    return;
-  }
-
-  var btn = document.getElementById('exportXlsBtn');
-  btn.disabled = true;
-  btn.innerHTML = '&#8987; Exporting...';
-
-  var sd = document.getElementById('dFrom').value;
-  var ed = document.getElementById('dTo').value;
-
-  try {
-    var res = await fetch(API + '/api/export-excel', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ start_date: sd, end_date: ed })
-    });
-
-    if (!res.ok) {
-      var err = await res.json();
-      throw new Error(err.detail || 'Export failed');
-    }
-
-    // Stream the binary blob and trigger browser download
-    var blob = await res.blob();
-    var url  = URL.createObjectURL(blob);
-    var a    = document.createElement('a');
-    a.href     = url;
-    a.download = 'Jivo_Sales_' + sd + '_to_' + ed + '.xlsx';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-
-    showToast('Excel exported — 2 sheets (Raw + Summary)', 'ok');
-
-  } catch (e) {
-    showToast('Export error: ' + e.message, 'err');
-  } finally {
-    btn.disabled = false;
-    btn.innerHTML = '&#11015; Export Excel';
-  }
+function exportCSV(){
+  if(!filtered.length){showToast('No data','err');return;}
+  var h=['Type','Product','Tgt_Ltrs','Tgt_Rate','Avg_Realise','Act_Ltrs','Act_Realise','Revenue','Variance','Recovery','Rate_Impact'];
+  var csv=h.join(',')+'\n';
+  for(var i=0;i<filtered.length;i++){var r=filtered[i],c=r._nodata?{I:0,J:0,K:0}:calc(r.litres,r.linetotal,r.realise,r.target_sale||0,r.target_realise||0);var ar=getAvgRealise(r);
+    csv+=[r.u_type,r.u_sub_group,r.target_sale||0,r.target_realise||0,ar?ar.toFixed(2):'',r.litres||0,r.realise||0,r.linetotal||0,c.I.toFixed(2),c.J.toFixed(2),c.K.toFixed(2)].join(',')+'\n';}
+  var a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+  a.download='Sales_'+document.getElementById('dFrom').value+'_'+document.getElementById('dTo').value+'.csv';a.click();showToast('Exported','ok');
 }
-
-
-
 function fN(n,d){d=d||0;if(n===null||n===undefined||isNaN(n))return'&mdash;';return new Intl.NumberFormat('en-IN',{minimumFractionDigits:d,maximumFractionDigits:d}).format(n);}
 function fNp(n,d){d=d||0;if(n===null||n===undefined||isNaN(n))return'—';return new Intl.NumberFormat('en-IN',{minimumFractionDigits:d,maximumFractionDigits:d}).format(n);}
 function fC(n){if(n===null||n===undefined||isNaN(n))return'&mdash;';return'\u20B9'+new Intl.NumberFormat('en-IN',{maximumFractionDigits:0}).format(Math.round(n));}
@@ -783,7 +743,7 @@ function lockEditing(){
 // ==================== PRODUCT FILTER ====================
 function buildProductFilterList(){
   var html='';
-  var sorted=PRODUCTS.slice().sort(function(a,b){return a.u_type.localeCompare(b.u_type)||a.u_sub_group.localeCompare(b.u_sub_group);});
+  var sorted=PRODUCTS.slice().sort(function(a,b){return b.u_type.localeCompare(a.u_type)||a.u_sub_group.localeCompare(b.u_sub_group);});
   for(var i=0;i<sorted.length;i++){
     var p=sorted[i],pk=p.u_type+'|'+p.u_sub_group,checked=selectedProducts[pk]!==false;
     var bc=p.u_type==='PREMIUM'?'badge-prem':'badge-comm';

@@ -26,8 +26,9 @@
     "target_realise": 145
   },
   "PREMIUM|BLENDED": {
-    "target_sale": 10000,
-    "target_realise": 0
+    "target_sale": 10000.0,
+    "target_realise": 190.0,
+    "difference6": 0
   },
   "PREMIUM|CANOLA": {
     "target_sale": 350000,
@@ -38,8 +39,9 @@
     "target_realise": 449
   },
   "PREMIUM|EXTRA VIRGIN OLIVE": {
-    "target_sale": 10000,
-    "target_realise": 500
+    "target_sale": 15000.0,
+    "target_realise": 500.0,
+    "difference6": 0
   },
   "PREMIUM|GHEE": {
     "target_sale": 15000,
