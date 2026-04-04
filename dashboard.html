@@ -183,7 +183,7 @@ td.ecell input.locked{background:var(--surface2);color:var(--text3);cursor:not-a
 <div class="header">
   <div class="header-left">
     <div class="logo-icon">JS</div>
-    <h1>Realise Dashboard <span>REPORT_SALES_ANALYSIS</span> <span class="vbadge">v10</span></h1>
+    <h1>Realise Dashboard <span>REPORT_SALES_ANALYSIS</span> <span class="vbadge">v11</span></h1>
   </div>
   <div class="status-pill"><span class="dot dot-red" id="sDot"></span><span id="sTxt">Checking...</span></div>
   <span class="user-badge" id="userBadge" style="display:none"><span class="ub-dot"></span><span id="ubName"></span> <span class="ub-role" id="ubRole"></span><button class="logout-btn" onclick="doLogout()">Logout</button></span>
@@ -293,6 +293,11 @@ td.ecell input.locked{background:var(--surface2);color:var(--text3);cursor:not-a
 
 <script>
 var API=window.location.origin;
+
+// ==================== PRODUCTS LIST ====================
+// This is the canonical list of all products (for filtering, ordering, etc.)
+// Target VALUES (ts/tr) here are only used as absolute last resort if
+// the server /api/targets call fails entirely. Normally savedTargets governs.
 var PRODUCTS=[
   {u_type:"COMMODITY",u_sub_group:"BLENDED",ts:30000,tr:130},
   {u_type:"COMMODITY",u_sub_group:"COTTON SEED",ts:20000,tr:131},
@@ -301,7 +306,7 @@ var PRODUCTS=[
   {u_type:"PREMIUM",u_sub_group:"SLICED OLIVE",ts:0,tr:0},
   {u_type:"COMMODITY",u_sub_group:"SOYABEAN",ts:400000,tr:123},
   {u_type:"COMMODITY",u_sub_group:"SUNFLOWER",ts:135000,tr:145},
-  {u_type:"PREMIUM",u_sub_group:"BLENDED",ts:10000,tr:0},
+  {u_type:"PREMIUM",u_sub_group:"BLENDED",ts:10000,tr:190},
   {u_type:"PREMIUM",u_sub_group:"CANOLA",ts:350000,tr:205},
   {u_type:"PREMIUM",u_sub_group:"COCONUT",ts:5000,tr:449},
   {u_type:"PREMIUM",u_sub_group:"EXTRA VIRGIN OLIVE",ts:10000,tr:500},
@@ -311,10 +316,52 @@ var PRODUCTS=[
   {u_type:"PREMIUM",u_sub_group:"SESAME",ts:5000,tr:0},
   {u_type:"PREMIUM",u_sub_group:"YELLOW MUSTARD",ts:10000,tr:180}
 ];
-var DEFAULTS={};
-for(var i=0;i<PRODUCTS.length;i++){var p=PRODUCTS[i];DEFAULTS[p.u_type+'|'+p.u_sub_group]={ts:p.ts,tr:p.tr};}
-function getDefTS(t,s){var d=DEFAULTS[t+'|'+s];return d?d.ts:0;}
-function getDefTR(t,s){var d=DEFAULTS[t+'|'+s];return d?d.tr:0;}
+
+// ==================== SAVED TARGETS (single source of truth) ====================
+// Loaded from /api/targets on startup. This is what we use EVERYWHERE for
+// default target_sale and target_realise values. PRODUCTS.ts/tr are fallback only.
+var savedTargets = {};  // key: "TYPE|SUB_GROUP" → {target_sale, target_realise}
+var savedTargetsLoaded = false;
+
+async function loadSavedTargets() {
+  try {
+    var res = await fetch(API+'/api/targets');
+    if (res.ok) {
+      savedTargets = await res.json();
+      savedTargetsLoaded = true;
+      console.log('[TARGETS] Loaded '+Object.keys(savedTargets).length+' saved targets from server');
+    }
+  } catch(e) {
+    console.warn('[TARGETS] Could not load saved targets:', e);
+  }
+}
+
+// Get target_sale for a product key, using savedTargets first
+function getDefTS(u_type, u_sub) {
+  var key = u_type+'|'+u_sub;
+  if (savedTargets[key] && savedTargets[key].target_sale !== undefined) {
+    return savedTargets[key].target_sale;
+  }
+  // Fallback to PRODUCTS array hardcoded value
+  for (var i=0; i<PRODUCTS.length; i++) {
+    if (PRODUCTS[i].u_type===u_type && PRODUCTS[i].u_sub_group===u_sub) return PRODUCTS[i].ts;
+  }
+  return 0;
+}
+
+// Get target_realise for a product key, using savedTargets first
+function getDefTR(u_type, u_sub) {
+  var key = u_type+'|'+u_sub;
+  if (savedTargets[key] && savedTargets[key].target_realise !== undefined) {
+    return savedTargets[key].target_realise;
+  }
+  // Fallback to PRODUCTS array hardcoded value
+  for (var i=0; i<PRODUCTS.length; i++) {
+    if (PRODUCTS[i].u_type===u_type && PRODUCTS[i].u_sub_group===u_sub) return PRODUCTS[i].tr;
+  }
+  return 0;
+}
+
 var MONTHS=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
 function currentMonth(){return MONTHS[new Date().getMonth()];}
 
@@ -322,10 +369,9 @@ var allData=[],filtered=[],dataFetched=false,isDirty=false,modifiedRealKeys=new 
 var drillData={},drillOpen={},drillDim={},rootDrillDim='';
 var avgRealiseData={},avgRealiseDrill={},avgPeriod='';
 var editMode=false;
-var currentUser=null; // {username, role, type_filter, can_edit, display_name}
-var selectedProducts={}; // key=TYPE|PRODUCT, value=true/false
-// Init all products as selected
-for(var pi=0;pi<PRODUCTS.length;pi++)selectedProducts[PRODUCTS[pi].u_type+'|'+PRODUCTS[pi].u_sub_group]=true;
+var currentUser=null;
+var selectedProducts={};
+for(var pi=0;pi<PRODUCTS.length;pi++) selectedProducts[PRODUCTS[pi].u_type+'|'+PRODUCTS[pi].u_sub_group]=true;
 function isProdSelected(type,sub){return selectedProducts[type+'|'+sub]!==false;}
 
 function getDrillBy(){return document.getElementById('fDrill').value;}
@@ -395,19 +441,23 @@ async function onAvgPeriodChange(){
   }catch(e){showToast('Avg realise error: '+e.message,'err');}
 }
 
-console.log('%c[JIVO] Realise Dashboard v8','color:#059669;font-weight:bold;font-size:14px');
+console.log('%c[JIVO] Realise Dashboard v11','color:#059669;font-weight:bold;font-size:14px');
 
 document.addEventListener('DOMContentLoaded',function(){
   var n=new Date();
   document.getElementById('dFrom').value=n.getFullYear()+'-'+String(n.getMonth()+1).padStart(2,'0')+'-01';
   document.getElementById('dTo').value=n.toISOString().split('T')[0];
   checkHealth();
-  if(!checkSession()){
-    setTimeout(function(){document.getElementById('loginUser').focus();},200);
-  }
+  // Load saved targets FIRST, then check session
+  loadSavedTargets().then(function(){
+    if(!checkSession()){
+      setTimeout(function(){document.getElementById('loginUser').focus();},200);
+    }
+  });
 });
 
 async function checkHealth(){try{var r=await fetch(API+'/health');var d=await r.json();document.getElementById('sDot').className=d.sap_connected?'dot dot-green':'dot dot-red';document.getElementById('sTxt').textContent=d.sap_connected?'SAP Connected':'SAP Error';}catch(e){document.getElementById('sDot').className='dot dot-red';document.getElementById('sTxt').textContent='Server Offline';}}
+
 function realKey(r){return r.u_type+'|'+r.u_sub_group+'|'+r.month+'|'+r.year;}
 function isAggregatedView(){return document.getElementById('fMonth').value==='';}
 function findUnderlyingRows(t,s){var ft=document.getElementById('fType').value,fy=document.getElementById('fYear').value,o=[];for(var i=0;i<allData.length;i++){var r=allData[i];if(r.u_type!==t||r.u_sub_group!==s)continue;if(ft&&r.u_type!==ft)continue;if(fy&&r.year!==fy)continue;o.push(r);}return o;}
@@ -422,21 +472,14 @@ function populateFilters(months,years){
 
 async function renderInitialTable(){
   filtered=[];
-  // Load saved targets from server
-  var savedTargets={};
-  try{
-    var res=await fetch(API+'/api/targets');
-    if(res.ok)savedTargets=await res.json();
-  }catch(e){console.log('[INIT] Could not load saved targets:',e);}
-
   var roleType=currentUser&&currentUser.type_filter?currentUser.type_filter:'';
   for(var i=0;i<PRODUCTS.length;i++){
-    var p=PRODUCTS[i],bk=p.u_type+'|'+p.u_sub_group;
+    var p=PRODUCTS[i];
     if(!isProdSelected(p.u_type,p.u_sub_group))continue;
     if(roleType&&p.u_type!==roleType)continue;
-    var saved=savedTargets[bk];
-    var ts=saved&&('target_sale' in saved)?saved.target_sale:p.ts;
-    var tr=saved&&('target_realise' in saved)?saved.target_realise:p.tr;
+    // Use getDefTS/getDefTR which now read from savedTargets first
+    var ts=getDefTS(p.u_type,p.u_sub_group);
+    var tr=getDefTR(p.u_type,p.u_sub_group);
     filtered.push({u_type:p.u_type,u_sub_group:p.u_sub_group,month:'',year:'',litres:0,linetotal:0,realise:0,target_sale:ts,target_realise:tr,_nodata:true});
   }
   filtered.sort(function(a,b){return (b.u_type.localeCompare(a.u_type))||((a.target_sale||0)<(b.target_sale||0)?1:(a.target_sale||0)>(b.target_sale||0)?-1:0);});
@@ -451,13 +494,26 @@ async function loadData(){
   drillData={};drillOpen={};drillDim={};rootDrillDim='';allExpanded=false;
   document.getElementById('expandAllBtn').innerHTML='&#9660; Expand All';
   try{
+    // Reload saved targets before fetch to ensure we have latest
+    await loadSavedTargets();
+
     var res=await fetch(API+'/api/sales-data',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({start_date:sd,end_date:ed})});
     if(!res.ok){var e=await res.json();throw new Error(e.detail||'Server error');}
     var result=await res.json();
     allData=result.data.filter(function(r){return r.u_type==='COMMODITY'||r.u_type==='PREMIUM';});
     dataFetched=true;modifiedRealKeys.clear();setDirty(false);
-    for(var i=0;i<allData.length;i++){var dr=allData[i];if(dr.target_sale==null||dr.target_sale===undefined)dr.target_sale=getDefTS(dr.u_type,dr.u_sub_group);if(dr.target_realise==null||dr.target_realise===undefined)dr.target_realise=getDefTR(dr.u_type,dr.u_sub_group);}
-    // Extract months and years from fetched data
+
+    // FIX: After fetch, ensure every row's target values match savedTargets.
+    // The server already does this, but this client-side pass ensures consistency
+    // even if there are any edge cases with the server response.
+    for(var i=0;i<allData.length;i++){
+      var dr=allData[i];
+      var key=dr.u_type+'|'+dr.u_sub_group;
+      // Only override if the server sent null/undefined (shouldn't happen after backend fix)
+      if(dr.target_sale==null||dr.target_sale===undefined) dr.target_sale=getDefTS(dr.u_type,dr.u_sub_group);
+      if(dr.target_realise==null||dr.target_realise===undefined) dr.target_realise=getDefTR(dr.u_type,dr.u_sub_group);
+    }
+
     var mSet={},ySet={};
     for(var mi=0;mi<allData.length;mi++){
       if(allData[mi].month)mSet[allData[mi].month]=1;
@@ -484,13 +540,18 @@ function applyFilters(){
   var rows=[];for(var i=0;i<allData.length;i++){var r=allData[i];if(ft&&r.u_type!==ft)continue;if(fm&&r.month!==fm)continue;if(fy&&r.year!==fy)continue;if(!isProdSelected(r.u_type,r.u_sub_group))continue;rows.push(r);}
   if(!fm){
     var agg={};for(var i=0;i<rows.length;i++){var r=rows[i],gk=r.u_type+'|'+r.u_sub_group;
-      if(!agg[gk])agg[gk]={u_type:r.u_type,u_sub_group:r.u_sub_group,month:'ALL',year:fy||'',litres:0,linetotal:0,target_sale:0,target_realise:getDefTR(r.u_type,r.u_sub_group),_count:0,_nodata:false};
+      if(!agg[gk])agg[gk]={u_type:r.u_type,u_sub_group:r.u_sub_group,month:'ALL',year:fy||'',litres:0,linetotal:0,
+        // FIX: use getDefTS/getDefTR (reads savedTargets) not r.target_sale directly for base
+        target_sale:0,target_realise:getDefTR(r.u_type,r.u_sub_group),_count:0,_nodata:false};
       var a=agg[gk];a.litres+=r.litres;a.linetotal+=r.linetotal;a.target_sale+=(r.target_sale||0);a._count++;}
     var prods=ft?PRODUCTS.filter(function(p){return p.u_type===ft;}):PRODUCTS;
     prods=prods.filter(function(p){return isProdSelected(p.u_type,p.u_sub_group);});
     for(var pi=0;pi<prods.length;pi++){var pk=prods[pi].u_type+'|'+prods[pi].u_sub_group;
       if(!agg[pk]){var mc=0;var sm={};for(var mi=0;mi<allData.length;mi++){if(!sm[allData[mi].month]){sm[allData[mi].month]=true;mc++;}}
-        agg[pk]={u_type:prods[pi].u_type,u_sub_group:prods[pi].u_sub_group,month:'ALL',year:fy||'',litres:0,linetotal:0,target_sale:getDefTS(prods[pi].u_type,prods[pi].u_sub_group)*mc,target_realise:getDefTR(prods[pi].u_type,prods[pi].u_sub_group),_count:0,_nodata:false};}}
+        // FIX: use getDefTS/getDefTR for no-data products (reads savedTargets)
+        agg[pk]={u_type:prods[pi].u_type,u_sub_group:prods[pi].u_sub_group,month:'ALL',year:fy||'',litres:0,linetotal:0,
+          target_sale:getDefTS(prods[pi].u_type,prods[pi].u_sub_group)*mc,
+          target_realise:getDefTR(prods[pi].u_type,prods[pi].u_sub_group),_count:0,_nodata:false};}}
     var vals=[],keys=Object.keys(agg);for(var k=0;k<keys.length;k++){var g=agg[keys[k]];g.realise=g.litres>0?Math.round((g.linetotal/g.litres)*100)/100:0;vals.push(g);}
     filtered=vals.sort(function(a,b){return (b.u_type.localeCompare(a.u_type))||((a.target_sale||0)<(b.target_sale||0)?1:(a.target_sale||0)>(b.target_sale||0)?-1:0);});
   }else{
@@ -500,7 +561,11 @@ function applyFilters(){
     prods2=prods2.filter(function(p){return isProdSelected(p.u_type,p.u_sub_group);});
     var rowYear=(rows.length>0)?rows[0].year:'';
     for(var pi2=0;pi2<prods2.length;pi2++){var pk2=prods2[pi2].u_type+'|'+prods2[pi2].u_sub_group;
-      if(!existing[pk2])rows.push({u_type:prods2[pi2].u_type,u_sub_group:prods2[pi2].u_sub_group,month:fm,year:rowYear,litres:0,linetotal:0,realise:0,target_sale:getDefTS(prods2[pi2].u_type,prods2[pi2].u_sub_group),target_realise:getDefTR(prods2[pi2].u_type,prods2[pi2].u_sub_group),_nodata:false});}
+      if(!existing[pk2]){
+        // FIX: use getDefTS/getDefTR for zero-data month rows (reads savedTargets)
+        rows.push({u_type:prods2[pi2].u_type,u_sub_group:prods2[pi2].u_sub_group,month:fm,year:rowYear,litres:0,linetotal:0,realise:0,
+          target_sale:getDefTS(prods2[pi2].u_type,prods2[pi2].u_sub_group),
+          target_realise:getDefTR(prods2[pi2].u_type,prods2[pi2].u_sub_group),_nodata:false});}}
     filtered=rows.sort(function(a,b){return (b.u_type.localeCompare(a.u_type))||((a.target_sale||0)<(b.target_sale||0)?1:(a.target_sale||0)>(b.target_sale||0)?-1:0);});
   }
   renderTable();updateSummary();
@@ -545,7 +610,7 @@ function renderTable(){
   html+='<tr class="total-row"><td></td><td colspan="2">TOTAL</td>';
   html+='<td class="num">'+fN(t.ts)+'</td>';
   html+='<td class="num">'+fN(t.twr,2)+'</td>';
-  html+='<td></td>'; // avg realise (no total)
+  html+='<td></td>';
   if(!dataFetched){
     html+='<td class="empty-sap">&mdash;</td><td class="empty-sap">&mdash;</td><td class="empty-sap">&mdash;</td>';
     html+='<td class="empty-sap">&mdash;</td><td></td><td class="empty-sap">&mdash;</td>';
@@ -578,7 +643,7 @@ function renderSubRows(productPK,uType,uSubGroup,parentPath,depth){
     }else{
       html+='<td style="padding-left:'+indent+'px"><span class="sub-dim">'+s.dimension+'</span></td>';
     }
-    html+='<td></td><td></td>'; // tgt ltrs, tgt rate
+    html+='<td></td><td></td>';
     var subAr=getDrillAvgRealise(uType,uSubGroup,parentDimUsed,s.dimension);
     html+='<td class="num" style="color:var(--indigo)">'+(subAr?fN(subAr,2):'<span class="v-dash">&mdash;</span>')+'</td>';
     html+='<td class="num">'+fN(s.litres)+'</td>';
@@ -630,9 +695,7 @@ function computeTotals(){var litres=0,lt=0,ts=0,cI=0,cK=0,spTR=0;for(var i=0;i<f
 function onEdit(inp){
   var field=inp.dataset.f,val=parseFloat(inp.value)||0,idx=parseInt(inp.closest('tr').dataset.i),displayRow=filtered[idx];
   displayRow[field]=val;setDirty(true);
-  // Track which product was edited
   modifiedRealKeys.add(productKey(displayRow));
-  // Update underlying allData rows too
   if(dataFetched){
     var underlying=findUnderlyingRows(displayRow.u_type,displayRow.u_sub_group);
     for(var j=0;j<underlying.length;j++){underlying[j][field]=val;}
@@ -648,7 +711,6 @@ function onEdit(inp){
 async function saveTargets(){
   if(!isDirty){showToast('No changes','info');return;}
   var btn=document.getElementById('saveBtn');btn.disabled=true;btn.textContent='Saving...';
-  // Simple: loop through filtered, save every modified product with key = TYPE|SUB
   var targets=[];
   for(var i=0;i<filtered.length;i++){
     var r=filtered[i],bk=productKey(r);
@@ -662,11 +724,16 @@ async function saveTargets(){
     var res=await fetch(API+'/api/save-targets',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({targets:targets})});
     if(!res.ok)throw new Error((await res.json()).detail||'Error');
     var result=await res.json();
+    // Update local savedTargets cache so subsequent operations use new values
+    for(var i=0;i<targets.length;i++){
+      savedTargets[targets[i].key]={target_sale:targets[i].target_sale,target_realise:targets[i].target_realise};
+    }
     modifiedRealKeys.clear();setDirty(false);
     showToast('Saved '+result.saved+' targets','ok');
   }catch(e){showToast('Save failed: '+e.message,'err');}
   finally{btn.innerHTML='&#128190; Save';if(isDirty)btn.disabled=false;}
 }
+
 function updateSummary(){
   var t=computeTotals();
   document.getElementById('sTWR').textContent=t.twr?fNp(t.twr,2):'—';
@@ -678,6 +745,7 @@ function updateSummary(){
   if(dataFetched){d.textContent=fNp(t.cI);d.className='sv '+(t.cI>=0?'pos':'neg');}else{d.textContent='—';d.className='sv';}
   document.getElementById('sR').textContent=filtered.length;
 }
+
 function exportCSV(){
   if(!filtered.length){showToast('No data','err');return;}
   var h=['Type','Product','Tgt_Ltrs','Tgt_Rate','Avg_Realise','Act_Ltrs','Act_Realise','Revenue','Variance','Recovery','Rate_Impact'];
@@ -781,7 +849,6 @@ function applyProductFilter(){
   }
   applyFilters();
 }
-// Close product filter dropdown on outside click
 document.addEventListener('click',function(e){
   var wrap=document.querySelector('.prod-filter-wrap');
   if(wrap&&!wrap.contains(e.target)){
@@ -830,12 +897,9 @@ function doLogout(){
 function applyRoleRestrictions(){
   if(!currentUser)return;
   var u=currentUser;
-  // Show user badge
   document.getElementById('ubName').textContent=u.display_name;
   document.getElementById('ubRole').textContent=u.role==='admin'?'Admin':u.type_filter||'Viewer';
   document.getElementById('userBadge').style.display='';
-
-  // Type filter lock
   var fType=document.getElementById('fType');
   if(u.type_filter){
     fType.value=u.type_filter;
@@ -846,8 +910,6 @@ function applyRoleRestrictions(){
     fType.disabled=false;
     fType.style.opacity='1';
   }
-
-  // Edit button visibility
   if(u.can_edit){
     document.getElementById('editBtn').style.display='';
   }else{
@@ -855,12 +917,9 @@ function applyRoleRestrictions(){
     editMode=false;
     document.getElementById('editIndicator').classList.remove('show');
   }
-
-  // Re-render with role applied
   if(dataFetched){applyFilters();}else{renderInitialTable();}
 }
 
-// Check session on load (persist across page refresh)
 function checkSession(){
   var saved=sessionStorage.getItem('jivo_user');
   if(saved){

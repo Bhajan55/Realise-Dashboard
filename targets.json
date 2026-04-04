@@ -60,8 +60,9 @@
     "target_realise": 0
   },
   "PREMIUM|SLICED OLIVE": {
-    "target_sale": 0,
-    "target_realise": 0
+    "target_sale": 0.0,
+    "target_realise": 0.0,
+    "difference6": 0
   },
   "PREMIUM|YELLOW MUSTARD": {
     "target_sale": 10000,

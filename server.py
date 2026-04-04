@@ -4,6 +4,10 @@ FastAPI + SAP HANA via REPORT_SALES_ANALYSIS procedure
 Drill-down uses cached data — no extra SAP calls
 Historical avg realise with drill-level breakdowns
 Targets stored in targets.json
+
+FIX: targets.json is the single source of truth for all target values.
+     DEFAULT_TARGETS is only a fallback when a key has never been saved.
+     SAP data fetch never resets or overwrites saved targets.
 """
 
 from fastapi import FastAPI, HTTPException
@@ -37,7 +41,7 @@ except ImportError:
 SAP_HANA_HOST = "103.89.45.192"
 SAP_HANA_PORT = 30015
 SAP_HANA_USER = "DATA1"
-SAP_HANA_PASSWORD = "Jivo@8912"
+SAP_HANA_PASSWORD = "Jivo@1989"
 SAP_SCHEMA = "JIVO_OIL_HANADB"
 SERVER_PORT = 8002
 TARGETS_FILE = "targets.json"
@@ -55,6 +59,8 @@ ALLOWED_SUB_GROUPS = [
     "GHEE", "GROUNDNUT", "OLIVE", "SESAME", "YELLOW MUSTARD"
 ]
 
+# DEFAULT_TARGETS: Only used when a key has NEVER been saved to targets.json.
+# Once a user saves a target, targets.json is the sole authority.
 DEFAULT_TARGETS = {
     "COMMODITY|BLENDED":          {"target_sale": 30000,  "target_realise": 130},
     "COMMODITY|COTTON SEED":      {"target_sale": 20000,  "target_realise": 131},
@@ -84,6 +90,7 @@ _hist_cache = {"data": {}, "raw_data": [], "end_date": None, "fetched_at": None}
 
 # ==================== TARGETS ====================
 def load_targets():
+    """Load saved targets from file. Returns dict keyed by TYPE|SUB_GROUP."""
     if os.path.exists(TARGETS_FILE):
         with open(TARGETS_FILE, "r") as f:
             return json.load(f)
@@ -92,6 +99,26 @@ def load_targets():
 def save_targets_file(data):
     with open(TARGETS_FILE, "w") as f:
         json.dump(data, f, indent=2)
+
+def get_target_for_key(key: str, saved_targets: dict) -> dict:
+    """
+    Get target values for a TYPE|SUB_GROUP key.
+    Priority: targets.json (saved) > DEFAULT_TARGETS > zeros
+    This is the SINGLE function used everywhere to resolve targets.
+    """
+    if key in saved_targets:
+        saved = saved_targets[key]
+        return {
+            "target_sale": saved.get("target_sale", 0),
+            "target_realise": saved.get("target_realise", 0),
+        }
+    if key in DEFAULT_TARGETS:
+        d = DEFAULT_TARGETS[key]
+        return {
+            "target_sale": d.get("target_sale", 0),
+            "target_realise": d.get("target_realise", 0),
+        }
+    return {"target_sale": 0, "target_realise": 0}
 
 # ==================== MODELS ====================
 class DateRange(BaseModel):
@@ -236,7 +263,9 @@ async def get_sales_data(params: DateRange):
         _cache["end_date"] = params.end_date
         _cache["fetched_at"] = datetime.now().isoformat()
 
-        targets = load_targets()
+        # Load saved targets ONCE — this is the single source of truth
+        saved_targets = load_targets()
+
         grouped = {}
 
         for d in raw_dicts:
@@ -257,16 +286,13 @@ async def get_sales_data(params: DateRange):
             group_key = f"{u_type}|{u_sub}|{month}|{year}"
 
             if group_key not in grouped:
-                # Simple: always look up by TYPE|SUB
-                saved = targets.get(base_key, {})
-                defaults = DEFAULT_TARGETS.get(base_key, {"target_sale": 0, "target_realise": 0})
-                ts = saved["target_sale"] if "target_sale" in saved else defaults["target_sale"]
-                tr = saved["target_realise"] if "target_realise" in saved else defaults["target_realise"]
+                # Use get_target_for_key — respects saved targets.json first
+                t = get_target_for_key(base_key, saved_targets)
                 grouped[group_key] = {
                     "u_type": u_type, "u_sub_group": u_sub, "month": month, "year": year,
                     "litres": 0, "linetotal": 0,
-                    "target_sale": ts,
-                    "target_realise": tr,
+                    "target_sale": t["target_sale"],
+                    "target_realise": t["target_realise"],
                     "row_key": group_key
                 }
             grouped[group_key]["litres"] += litres
@@ -480,7 +506,24 @@ async def save_targets(params: BulkTargetUpdate):
 
 @app.get("/api/targets")
 async def get_targets():
-    return load_targets()
+    """
+    Returns merged targets: saved targets.json values merged over DEFAULT_TARGETS.
+    This ensures the frontend always gets a complete set of targets for all products,
+    with saved values taking priority.
+    """
+    saved = load_targets()
+    # Start with defaults, then overlay saved values
+    merged = {}
+    for key, defaults in DEFAULT_TARGETS.items():
+        if key in saved:
+            merged[key] = saved[key]
+        else:
+            merged[key] = defaults
+    # Also include any saved keys not in DEFAULT_TARGETS
+    for key, val in saved.items():
+        if key not in merged:
+            merged[key] = val
+    return merged
 
 # ==================== RUN ====================
 if __name__ == "__main__":
