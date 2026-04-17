@@ -12,11 +12,13 @@ FIX: targets.json is the single source of truth for all target values.
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 from typing import Optional
 import json, os
 from datetime import datetime, date, timedelta
+import csv
+import io
 
 try:
     from dateutil.relativedelta import relativedelta
@@ -326,6 +328,39 @@ async def get_sales_data(params: DateRange):
         if conn:
             try: conn.close()
             except: pass
+
+@app.get("/api/export-raw-csv")
+async def export_raw_csv():
+    """
+    Export the exact raw rows fetched from SAP (cached in _cache["raw_data"])
+    as CSV, preserving backend column order.
+    """
+    raw_rows = _cache.get("raw_data") or []
+    columns = _cache.get("columns") or []
+    if not raw_rows or not columns:
+        raise HTTPException(status_code=400, detail="No raw data available — click Fetch Data first")
+
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(columns)
+
+    for row in raw_rows:
+        values = []
+        for col in columns:
+            val = row.get(col, "")
+            if isinstance(val, (datetime, date)):
+                val = val.isoformat()
+            values.append(val)
+        writer.writerow(values)
+
+    start_date = _cache.get("start_date") or "from"
+    end_date = _cache.get("end_date") or "to"
+    filename = f"Sales_RAW_{start_date}_{end_date}.csv"
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+    )
 
 # ==================== HISTORICAL ====================
 def fetch_historical_data(end_date_str):
