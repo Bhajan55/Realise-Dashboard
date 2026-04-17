@@ -452,6 +452,8 @@ document.addEventListener('DOMContentLoaded',function(){
   loadSavedTargets().then(function(){
     if(!checkSession()){
       setTimeout(function(){document.getElementById('loginUser').focus();},200);
+    } else {
+      loadData();
     }
   });
 });
@@ -872,6 +874,7 @@ async function doLogin(){
       document.getElementById('loginScreen').classList.add('hidden');
       document.getElementById('appWrap').style.display='';
       showToast('Welcome, '+result.display_name,'ok');
+      loadData();
     }else{
       errEl.textContent=result.message||'Login failed';
       errEl.style.display='block';

@@ -39,7 +39,7 @@ except ImportError:
 
 # ==================== CONFIG ====================
 SAP_HANA_HOST = "103.89.45.192"
-SAP_HANA_PORT = 30015
+SAP_HANA_PORT = 30015   
 SAP_HANA_USER = "DATA1"
 SAP_HANA_PASSWORD = "Jivo@1989"
 SAP_SCHEMA = "JIVO_OIL_HANADB"
