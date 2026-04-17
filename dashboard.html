@@ -749,12 +749,23 @@ function updateSummary(){
 }
 
 function exportCSV(){
-  if(!filtered.length){showToast('No data','err');return;}
-  var h=['Type','Product','Tgt_Ltrs','Tgt_Rate','Avg_Realise','Act_Ltrs','Act_Realise','Revenue','Variance','Recovery','Rate_Impact'];
-  var csv=h.join(',')+'\n';
-  for(var i=0;i<filtered.length;i++){var r=filtered[i],c=r._nodata?{I:0,J:0,K:0}:calc(r.litres,r.linetotal,r.realise,r.target_sale||0,r.target_realise||0);var ar=getAvgRealise(r);
-    csv+=[r.u_type,r.u_sub_group,r.target_sale||0,r.target_realise||0,ar?ar.toFixed(2):'',r.litres||0,r.realise||0,r.linetotal||0,c.I.toFixed(2),c.J.toFixed(2),c.K.toFixed(2)].join(',')+'\n';}
-  var a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+  if(!allData.length){showToast('No fetched data to export','err');return;}
+  var headers=Object.keys(allData[0]||{});
+  if(!headers.length){showToast('No fields available in fetched data','err');return;}
+  function escCSV(v){
+    if(v===null||v===undefined)return '';
+    var s=String(v);
+    if(/[",\n]/.test(s))return '"'+s.replace(/"/g,'""')+'"';
+    return s;
+  }
+  var lines=[headers.join(',')];
+  for(var i=0;i<allData.length;i++){
+    var row=allData[i],vals=[];
+    for(var j=0;j<headers.length;j++)vals.push(escCSV(row[headers[j]]));
+    lines.push(vals.join(','));
+  }
+  var csv=lines.join('\n');
+  var a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8;'}));
   a.download='Sales_'+document.getElementById('dFrom').value+'_'+document.getElementById('dTo').value+'.csv';a.click();showToast('Exported','ok');
 }
 function fN(n,d){d=d||0;if(n===null||n===undefined||isNaN(n))return'&mdash;';return new Intl.NumberFormat('en-IN',{minimumFractionDigits:d,maximumFractionDigits:d}).format(n);}
