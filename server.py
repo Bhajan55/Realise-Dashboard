@@ -21,6 +21,8 @@ from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 from typing import Optional, List
 import json, os
+from dotenv import load_dotenv
+load_dotenv()
 from datetime import datetime, date, timedelta
 import csv
 import io
