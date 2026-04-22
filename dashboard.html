@@ -113,6 +113,24 @@ td.ccell{font-weight:500}
 .modal-box .btn-cancel{background:var(--surface2);color:var(--text2)}
 .modal-box .btn-confirm{background:var(--blue);color:#fff}
 .modal-box .pin-error{color:var(--red);font-size:11px;margin-bottom:8px;display:none}
+.modal-box input.reauth-input{letter-spacing:normal;font-size:14px;text-align:left;padding:8px 12px}
+.modal-box-wide{width:700px;max-width:96vw;text-align:left;resize:both;overflow:auto;min-width:480px;min-height:300px}
+.ut-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;gap:12px;flex-wrap:wrap}
+.ut-header>div:first-child h3{margin:0 0 2px}
+.ut-header>div:first-child p{margin:0}
+.ut-period{display:flex;gap:8px;align-items:center}
+.ut-period select,.ut-period input{padding:6px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:13px;background:var(--surface2);color:var(--text);font-family:inherit;outline:none}
+.ut-period select:last-child{width:86px}
+.ut-table-wrap{flex:1;min-height:0;max-height:420px;overflow-y:auto;border:1.5px solid var(--border);border-radius:8px;margin-bottom:14px}
+.ut-table{width:100%;border-collapse:collapse;font-size:13px}
+.ut-table thead th{position:sticky;top:0;background:var(--surface2);padding:8px 12px;text-align:left;font-weight:600;color:var(--text2);border-bottom:1.5px solid var(--border)}
+.ut-table tr.ut-group-row td{background:var(--surface2);padding:5px 12px;font-size:11px;font-weight:700;letter-spacing:1px;color:var(--text3);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.ut-table tbody tr:not(.ut-group-row):hover{background:rgba(59,130,246,0.05)}
+.ut-table td{padding:5px 10px;border-bottom:1px solid var(--border)}
+.ut-table td:first-child{font-size:11px;font-weight:700;color:var(--blue);letter-spacing:.4px;white-space:nowrap}
+.ut-table td:nth-child(2){font-size:13px;font-weight:700;color:var(--text);white-space:nowrap;letter-spacing:.3px}
+.ut-table input[type=number]{width:100%;padding:5px 8px;border:1.5px solid var(--border);border-radius:5px;font-size:14px;font-weight:600;font-family:'Courier New',Courier,monospace;background:var(--bg2);color:var(--text);outline:none;box-sizing:border-box;text-align:right}
+.ut-table input[type=number]:focus{border-color:var(--blue);box-shadow:0 0 0 2px var(--blue-glow)}
 /* Login Screen */
 .login-screen{position:fixed;inset:0;background:linear-gradient(135deg,#1e293b 0%,#0f172a 100%);z-index:500;display:flex;justify-content:center;align-items:center}
 .login-screen.hidden{display:none}
@@ -232,10 +250,7 @@ td.ecell input.locked{background:var(--surface2);color:var(--text3);cursor:not-a
     </select>
   </div>
   <div class="controls-right">
-    <span class="edit-indicator" id="editIndicator">&#9998; Edit Mode</span>
-    <button class="btn btn-edit" id="editBtn" onclick="promptEditPin()">&#128274; Edit</button>
-    <span class="dirty-badge" id="dirtyBadge">Unsaved changes</span>
-    <button class="btn btn-save" id="saveBtn" disabled onclick="saveTargets()">&#128190; Save</button>
+    <button class="btn btn-edit" id="updateTargetsBtn" onclick="openUpdateTargetsModal()">Update Targets</button>
     <button class="btn btn-ghost" onclick="exportCSV()">&#11015; Export CSV</button>
   </div>
 </div>
@@ -278,15 +293,49 @@ td.ecell input.locked{background:var(--surface2);color:var(--text3);cursor:not-a
 <div class="overlay" id="ov"><div class="spin"></div><div style="color:var(--text2);font-weight:500;font-size:13px">Fetching from SAP HANA...</div></div>
 <div class="toast" id="toast"></div>
 </div><!-- /appWrap -->
-<div class="modal-overlay" id="pinModal">
+<!-- Admin re-auth modal -->
+<div class="modal-overlay" id="adminReauthModal">
   <div class="modal-box">
-    <h3>&#128274; Enter Edit PIN</h3>
-    <p>Enter the admin PIN to enable editing targets</p>
-    <div class="pin-error" id="pinError">Incorrect PIN. Try again.</div>
-    <input type="password" id="pinInput" maxlength="10" placeholder="PIN" onkeydown="if(event.key==='Enter')verifyPin()">
+    <h3>Admin Verification</h3>
+    <p>Re-enter your admin credentials to edit targets.</p>
+    <div class="pin-error" id="reauthError" style="display:none"></div>
+    <input class="reauth-input" type="text" id="reauthUser" placeholder="Username" onkeydown="if(event.key==='Enter')document.getElementById('reauthPass').focus()">
+    <input class="reauth-input" type="password" id="reauthPass" placeholder="Password" onkeydown="if(event.key==='Enter')submitReauth()">
     <div class="modal-btns">
-      <button class="btn-cancel" onclick="closePinModal()">Cancel</button>
-      <button class="btn-confirm" onclick="verifyPin()">Unlock</button>
+      <button class="btn-cancel" onclick="closeReauthModal()">Cancel</button>
+      <button class="btn-confirm" onclick="submitReauth()">Verify</button>
+    </div>
+  </div>
+</div>
+<!-- Targets bulk-edit modal -->
+<div class="modal-overlay" id="updateTargetsModal">
+  <div class="modal-box modal-box-wide">
+    <div class="ut-header">
+      <div>
+        <h3>Update Monthly Targets</h3>
+        <p>Edit targets for all products, then click Save All.</p>
+      </div>
+      <div class="ut-period">
+        <select id="utMonth" onchange="loadTargetsIntoTable()"></select>
+        <select id="utYear" onchange="loadTargetsIntoTable()"></select>
+      </div>
+    </div>
+    <div class="ut-table-wrap">
+      <table class="ut-table">
+        <thead>
+          <tr>
+            <th style="width:20px"></th>
+            <th>Category</th>
+            <th>Target Litres</th>
+            <th>Target Rate</th>
+          </tr>
+        </thead>
+        <tbody id="utTableBody"></tbody>
+      </table>
+    </div>
+    <div class="modal-btns">
+      <button class="btn-cancel" onclick="closeUpdateTargetsModal()">Cancel</button>
+      <button class="btn-confirm" onclick="saveAllTargets()">Save All</button>
     </div>
   </div>
 </div>
@@ -320,14 +369,30 @@ var PRODUCTS=[
 // ==================== SAVED TARGETS (single source of truth) ====================
 // Loaded from /api/targets on startup. This is what we use EVERYWHERE for
 // default target_sale and target_realise values. PRODUCTS.ts/tr are fallback only.
-var savedTargets = {};  // key: "TYPE|SUB_GROUP" → {target_sale, target_realise}
+var savedTargets = {};  // key: "TYPE|SUB_GROUP" → {tgt_ltrs, tgt_rate, source}
 var savedTargetsLoaded = false;
+var updateAuthUser = null;
 
 async function loadSavedTargets() {
   try {
-    var res = await fetch(API+'/api/targets');
+    var monthSel = document.getElementById('fMonth');
+    var yearSel = document.getElementById('fYear');
+    var monthName = monthSel ? monthSel.value : currentMonth();
+    var monthNum = MONTHS.indexOf(monthName) + 1;
+    if (monthNum < 1) monthNum = new Date().getMonth() + 1;
+    var yearVal = yearSel && yearSel.value ? parseInt(yearSel.value, 10) : new Date().getFullYear();
+    if ((!yearSel || !yearSel.value) && monthSel && monthSel.value && allData && allData.length) {
+      for (var ai = 0; ai < allData.length; ai++) {
+        if (allData[ai].month === monthSel.value && allData[ai].year) {
+          yearVal = parseInt(allData[ai].year, 10);
+          break;
+        }
+      }
+    }
+    var res = await fetch(API+'/api/targets-v2?month='+monthNum+'&year='+yearVal);
     if (res.ok) {
-      savedTargets = await res.json();
+      var payload = await res.json();
+      savedTargets = payload.data || {};
       savedTargetsLoaded = true;
       console.log('[TARGETS] Loaded '+Object.keys(savedTargets).length+' saved targets from server');
     }
@@ -339,8 +404,8 @@ async function loadSavedTargets() {
 // Get target_sale for a product key, using savedTargets first
 function getDefTS(u_type, u_sub) {
   var key = u_type+'|'+u_sub;
-  if (savedTargets[key] && savedTargets[key].target_sale !== undefined) {
-    return savedTargets[key].target_sale;
+  if (savedTargets[key] && savedTargets[key].tgt_ltrs !== undefined) {
+    return savedTargets[key].tgt_ltrs;
   }
   // Fallback to PRODUCTS array hardcoded value
   for (var i=0; i<PRODUCTS.length; i++) {
@@ -352,8 +417,8 @@ function getDefTS(u_type, u_sub) {
 // Get target_realise for a product key, using savedTargets first
 function getDefTR(u_type, u_sub) {
   var key = u_type+'|'+u_sub;
-  if (savedTargets[key] && savedTargets[key].target_realise !== undefined) {
-    return savedTargets[key].target_realise;
+  if (savedTargets[key] && savedTargets[key].tgt_rate !== undefined) {
+    return savedTargets[key].tgt_rate;
   }
   // Fallback to PRODUCTS array hardcoded value
   for (var i=0; i<PRODUCTS.length; i++) {
@@ -463,7 +528,13 @@ async function checkHealth(){try{var r=await fetch(API+'/health');var d=await r.
 function realKey(r){return r.u_type+'|'+r.u_sub_group+'|'+r.month+'|'+r.year;}
 function isAggregatedView(){return document.getElementById('fMonth').value==='';}
 function findUnderlyingRows(t,s){var ft=document.getElementById('fType').value,fy=document.getElementById('fYear').value,o=[];for(var i=0;i<allData.length;i++){var r=allData[i];if(r.u_type!==t||r.u_sub_group!==s)continue;if(ft&&r.u_type!==ft)continue;if(fy&&r.year!==fy)continue;o.push(r);}return o;}
-function setDirty(v){isDirty=v;document.getElementById('saveBtn').disabled=!v||!editMode;document.getElementById('dirtyBadge').className=(v&&editMode)?'dirty-badge show':'dirty-badge';}
+function setDirty(v){
+  isDirty=v;
+  var saveBtn=document.getElementById('saveBtn');
+  var dirtyBadge=document.getElementById('dirtyBadge');
+  if(saveBtn) saveBtn.disabled=!v||!editMode;
+  if(dirtyBadge) dirtyBadge.className=(v&&editMode)?'dirty-badge show':'dirty-badge';
+}
 
 function populateFilters(months,years){
   var ms=document.getElementById('fMonth');ms.innerHTML='<option value="">All Months</option>';
@@ -534,8 +605,18 @@ async function loadData(){
   finally{document.getElementById('fetchBtn').disabled=false;document.getElementById('fetchBtn').innerHTML='&#9654; Fetch Data';document.getElementById('ov').classList.remove('show');}
 }
 
-function applyFilters(){
+async function applyFilters(){
   if(!dataFetched){renderInitialTable();return;}
+  await loadSavedTargets();
+  // Always re-stamp allData with latest savedTargets so edits take effect without refetch
+  for(var _i=0;_i<allData.length;_i++){
+    var _dr=allData[_i];
+    var _k=_dr.u_type+'|'+_dr.u_sub_group;
+    if(savedTargets[_k]){
+      if(savedTargets[_k].tgt_ltrs!=null) _dr.target_sale=savedTargets[_k].tgt_ltrs;
+      if(savedTargets[_k].tgt_rate!=null) _dr.target_realise=savedTargets[_k].tgt_rate;
+    }
+  }
   drillData={};drillOpen={};drillDim={};rootDrillDim='';allExpanded=false;
   document.getElementById('expandAllBtn').innerHTML='&#9660; Expand All';
   var ft=document.getElementById('fType').value,fm=document.getElementById('fMonth').value,fy=document.getElementById('fYear').value;
@@ -588,15 +669,15 @@ function renderTable(){
     if(showBtn){html+='<td class="sub-cell"><button class="drill-btn'+(isOpen?' open':'')+'" onclick="toggleDrill('+i+')">'+(isOpen?'\u2212':'+')+'</button>'+row.u_sub_group+'</td>';}
     else{html+='<td class="sub-cell">'+row.u_sub_group+'</td>';}
 
-    html+='<td class="ecell"><input type="number" value="'+(ts||'')+'" placeholder="0" data-f="target_sale" oninput="onEdit(this)" onfocus="this.select()"'+(editMode?'':' readonly class="locked"')+'></td>';
+    html+='<td class="ecell"><input type="number" value="'+(ts||'')+'" placeholder="0" readonly class="locked"></td>';
     var ar=getAvgRealise(row);
     if(nodata){
-      html+='<td class="ecell"><input type="number" value="'+(tr||'')+'" placeholder="0" data-f="target_realise" oninput="onEdit(this)" onfocus="this.select()"'+(editMode?'':' readonly class="locked"')+'></td>';
+      html+='<td class="ecell"><input type="number" value="'+(tr||'')+'" placeholder="0" readonly class="locked"></td>';
       html+='<td class="num" style="color:var(--indigo)">'+(ar?fN(ar,2):'<span class="v-dash">&mdash;</span>')+'</td>';
       html+='<td class="empty-sap">&mdash;</td><td class="empty-sap">&mdash;</td><td class="empty-sap">&mdash;</td>';
       html+='<td class="empty-sap">&mdash;</td><td class="empty-sap">&mdash;</td><td class="empty-sap">&mdash;</td>';
     }else{
-      html+='<td class="ecell"><input type="number" value="'+(tr||'')+'" placeholder="0" data-f="target_realise" oninput="onEdit(this)" onfocus="this.select()"'+(editMode?'':' readonly class="locked"')+'></td>';
+      html+='<td class="ecell"><input type="number" value="'+(tr||'')+'" placeholder="0" readonly class="locked"></td>';
       html+='<td class="num" style="color:var(--indigo)">'+(ar?fN(ar,2):'<span class="v-dash">&mdash;</span>')+'</td>';
       html+='<td class="num">'+fN(row.litres)+'</td>';
       html+='<td class="num">'+fN(row.realise,2)+'</td>';
@@ -711,8 +792,10 @@ function onEdit(inp){
 }
 
 async function saveTargets(){
+  var btn=document.getElementById('saveBtn');
+  if(!btn){showToast('Use Update Targets popup','info');return;}
   if(!isDirty){showToast('No changes','info');return;}
-  var btn=document.getElementById('saveBtn');btn.disabled=true;btn.textContent='Saving...';
+  btn.disabled=true;btn.textContent='Saving...';
   var targets=[];
   for(var i=0;i<filtered.length;i++){
     var r=filtered[i],bk=productKey(r);
@@ -777,51 +860,146 @@ function fC(n){if(n===null||n===undefined||isNaN(n))return'&mdash;';return'\u20B
 function vc(v){return v>0?'v-pos':v<0?'v-neg':'v-zero';}
 function showToast(msg,type){var el=document.getElementById('toast');el.textContent=msg;el.className='toast toast-'+(type||'info')+' show';setTimeout(function(){el.classList.remove('show');},3500);}
 
-// ==================== EDIT MODE (PIN) ====================
-function promptEditPin(){
-  if(editMode){lockEditing();return;}
-  document.getElementById('pinModal').classList.add('show');
-  document.getElementById('pinInput').value='';
-  document.getElementById('pinError').style.display='none';
-  setTimeout(function(){document.getElementById('pinInput').focus();},100);
+// ==================== UPDATE TARGETS (ADMIN LOGIN + POPUP) ====================
+function openUpdateTargetsModal(){
+  if(!currentUser || !currentUser.can_edit){
+    showToast('Only admin can update targets','err');
+    return;
+  }
+  updateAuthUser=null;
+  document.getElementById('adminReauthModal').classList.add('show');
+  document.getElementById('reauthError').style.display='none';
+  document.getElementById('reauthUser').value=currentUser.username||'';
+  document.getElementById('reauthPass').value='';
+  setTimeout(function(){document.getElementById('reauthPass').focus();},100);
 }
-function closePinModal(){
-  document.getElementById('pinModal').classList.remove('show');
-  document.getElementById('pinInput').value='';
-  document.getElementById('pinError').style.display='none';
+function closeReauthModal(){
+  document.getElementById('adminReauthModal').classList.remove('show');
 }
-async function verifyPin(){
-  var pin=document.getElementById('pinInput').value.trim();
-  if(!pin){document.getElementById('pinError').textContent='Please enter a PIN';document.getElementById('pinError').style.display='block';return;}
+function showReauthError(msg){
+  var el=document.getElementById('reauthError');
+  el.textContent=msg;
+  el.style.display='block';
+}
+async function submitReauth(){
+  var u=document.getElementById('reauthUser').value.trim();
+  var p=document.getElementById('reauthPass').value;
+  if(!u||!p){showReauthError('Enter username and password');return;}
   try{
-    var res=await fetch(API+'/api/verify-pin',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin:pin})});
+    var res=await fetch(API+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:u,password:p})});
     var result=await res.json();
-    if(result.verified){
-      editMode=true;closePinModal();
-      document.getElementById('editBtn').innerHTML='&#128275; Lock';
-      document.getElementById('editBtn').className='btn btn-lock';
-      document.getElementById('editIndicator').classList.add('show');
-      renderTable();
-      showToast('Edit mode enabled','ok');
-    }else{
-      document.getElementById('pinError').textContent='Incorrect PIN. Try again.';
-      document.getElementById('pinError').style.display='block';
-      document.getElementById('pinInput').value='';
-      document.getElementById('pinInput').focus();
+    if(result.status==='ok'&&result.can_edit){
+      updateAuthUser=result;
+      closeReauthModal();
+      openTargetsTableModal();
+      return;
     }
+    showReauthError('Admin login required');
   }catch(e){
-    document.getElementById('pinError').textContent='Server error';
-    document.getElementById('pinError').style.display='block';
+    showReauthError('Login check failed');
   }
 }
-function lockEditing(){
-  if(isDirty){if(!confirm('You have unsaved changes. Lock editing anyway?'))return;}
-  editMode=false;
-  document.getElementById('editBtn').innerHTML='&#128274; Edit';
-  document.getElementById('editBtn').className='btn btn-edit';
-  document.getElementById('editIndicator').classList.remove('show');
-  renderTable();
-  showToast('Editing locked','info');
+async function openTargetsTableModal(){
+  var btn=document.querySelector('#updateTargetsModal .btn-confirm');
+  btn.disabled=false;btn.textContent='Save All';
+  var mSel=document.getElementById('utMonth');
+  var yInp=document.getElementById('utYear');
+  mSel.innerHTML='';
+  for(var i=0;i<MONTHS.length;i++){
+    var opt=document.createElement('option');
+    opt.value=i+1;
+    opt.textContent=MONTHS[i];
+    mSel.appendChild(opt);
+  }
+  var mIdx=MONTHS.indexOf(document.getElementById('fMonth').value);
+  mSel.value=(mIdx>=0?(mIdx+1):(new Date().getMonth()+1));
+  var curYear=parseInt(document.getElementById('fYear').value)||new Date().getFullYear();
+  yInp.innerHTML='';
+  for(var y=curYear+1;y>=curYear-4;y--){
+    var yo=document.createElement('option');
+    yo.value=y;yo.textContent=y;
+    yInp.appendChild(yo);
+  }
+  yInp.value=curYear;
+  document.getElementById('updateTargetsModal').classList.add('show');
+  await loadTargetsIntoTable();
+}
+function closeUpdateTargetsModal(){
+  document.getElementById('updateTargetsModal').classList.remove('show');
+}
+var utSortedProducts=[];
+async function loadTargetsIntoTable(){
+  var m=parseInt(document.getElementById('utMonth').value||0,10);
+  var y=parseInt(document.getElementById('utYear').value||0,10);
+  if(!m||!y) return;
+  var data={};
+  try{
+    var res=await fetch(API+'/api/targets-v2?month='+m+'&year='+y);
+    if(res.ok){var payload=await res.json();data=payload.data||{};}
+  }catch(e){}
+  // PREMIUM first, then COMMODITY; within each group sort by target litres descending
+  utSortedProducts=PRODUCTS.slice().sort(function(a,b){
+    var order={'PREMIUM':0,'COMMODITY':1};
+    var ta=order[a.u_type]!=null?order[a.u_type]:2;
+    var tb=order[b.u_type]!=null?order[b.u_type]:2;
+    if(ta!==tb) return ta-tb;
+    var ka=a.u_type+'|'+a.u_sub_group, kb=b.u_type+'|'+b.u_sub_group;
+    var la=(data[ka]&&data[ka].tgt_ltrs!=null)?data[ka].tgt_ltrs:a.ts;
+    var lb=(data[kb]&&data[kb].tgt_ltrs!=null)?data[kb].tgt_ltrs:b.ts;
+    return lb-la;
+  });
+  var tbody=document.getElementById('utTableBody');
+  tbody.innerHTML='';
+  var lastType='';
+  for(var p=0;p<utSortedProducts.length;p++){
+    var pr=utSortedProducts[p];
+    if(pr.u_type!==lastType){
+      lastType=pr.u_type;
+      var gtr=document.createElement('tr');
+      gtr.className='ut-group-row';
+      gtr.innerHTML='<td colspan="4">'+pr.u_type+'</td>';
+      tbody.appendChild(gtr);
+    }
+    var key=pr.u_type+'|'+pr.u_sub_group;
+    var saved=data[key]||{};
+    var ltrs=saved.tgt_ltrs!=null?saved.tgt_ltrs:pr.ts;
+    var rate=saved.tgt_rate!=null?saved.tgt_rate:pr.tr;
+    var tr=document.createElement('tr');
+    tr.innerHTML='<td></td>'
+      +'<td>'+pr.u_sub_group+'</td>'
+      +'<td><input type="number" data-idx="'+p+'" data-field="ltrs" value="'+ltrs+'"></td>'
+      +'<td><input type="number" data-idx="'+p+'" data-field="rate" value="'+rate+'"></td>';
+    tbody.appendChild(tr);
+  }
+}
+async function saveAllTargets(){
+  var btn=document.querySelector('#updateTargetsModal .btn-confirm');
+  var origText=btn.textContent;
+  btn.disabled=true;
+  btn.textContent='Saving…';
+  showToast('Saving targets…','info');
+  var m=parseInt(document.getElementById('utMonth').value,10);
+  var y=parseInt(document.getElementById('utYear').value,10);
+  var dataRows=document.querySelectorAll('#utTableBody tr:not(.ut-group-row)');
+  var targets=[];
+  for(var i=0;i<dataRows.length;i++){
+    var pr=utSortedProducts[i];
+    var ltrs=parseFloat(dataRows[i].querySelector('[data-field="ltrs"]').value)||0;
+    var rate=parseFloat(dataRows[i].querySelector('[data-field="rate"]').value)||0;
+    targets.push({month:m,year:y,product_name:pr.u_sub_group,product_type:pr.u_type,tgt_ltrs:ltrs,tgt_rate:rate,updated_by:updateAuthUser.username});
+  }
+  try{
+    var res=await fetch(API+'/api/save-targets-v2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({targets:targets})});
+    if(!res.ok){var err=await res.json();throw new Error(err.detail||'Save failed');}
+    showToast('All targets saved for '+MONTHS[m-1]+' '+y,'ok');
+    await loadSavedTargets();
+    closeUpdateTargetsModal();
+    await applyFilters();
+  }catch(e){
+    showToast('Save failed: '+e.message,'err');
+    btn.disabled=false;
+    btn.textContent=origText;
+  }
 }
 
 // ==================== PRODUCT FILTER ====================
@@ -928,11 +1106,9 @@ function applyRoleRestrictions(){
     fType.style.opacity='1';
   }
   if(u.can_edit){
-    document.getElementById('editBtn').style.display='';
+    document.getElementById('updateTargetsBtn').style.display='';
   }else{
-    document.getElementById('editBtn').style.display='none';
-    editMode=false;
-    document.getElementById('editIndicator').classList.remove('show');
+    document.getElementById('updateTargetsBtn').style.display='none';
   }
   if(dataFetched){applyFilters();}else{renderInitialTable();}
 }
