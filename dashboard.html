@@ -293,13 +293,12 @@ td.ecell input.locked{background:var(--surface2);color:var(--text3);cursor:not-a
 <div class="overlay" id="ov"><div class="spin"></div><div style="color:var(--text2);font-weight:500;font-size:13px">Fetching from SAP HANA...</div></div>
 <div class="toast" id="toast"></div>
 </div><!-- /appWrap -->
-<!-- Admin re-auth modal -->
+<!-- Target Editor re-auth modal -->
 <div class="modal-overlay" id="adminReauthModal">
   <div class="modal-box">
-    <h3>Admin Verification</h3>
-    <p>Re-enter your admin credentials to edit targets.</p>
+    <h3>Target Editor Verification</h3>
+    <p>Enter the target editor password.</p>
     <div class="pin-error" id="reauthError" style="display:none"></div>
-    <input class="reauth-input" type="text" id="reauthUser" placeholder="Username" onkeydown="if(event.key==='Enter')document.getElementById('reauthPass').focus()">
     <input class="reauth-input" type="password" id="reauthPass" placeholder="Password" onkeydown="if(event.key==='Enter')submitReauth()">
     <div class="modal-btns">
       <button class="btn-cancel" onclick="closeReauthModal()">Cancel</button>
@@ -869,7 +868,6 @@ function openUpdateTargetsModal(){
   updateAuthUser=null;
   document.getElementById('adminReauthModal').classList.add('show');
   document.getElementById('reauthError').style.display='none';
-  document.getElementById('reauthUser').value=currentUser.username||'';
   document.getElementById('reauthPass').value='';
   setTimeout(function(){document.getElementById('reauthPass').focus();},100);
 }
@@ -882,21 +880,20 @@ function showReauthError(msg){
   el.style.display='block';
 }
 async function submitReauth(){
-  var u=document.getElementById('reauthUser').value.trim();
   var p=document.getElementById('reauthPass').value;
-  if(!u||!p){showReauthError('Enter username and password');return;}
+  if(!p){showReauthError('Enter password');return;}
   try{
-    var res=await fetch(API+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:u,password:p})});
+    var res=await fetch(API+'/api/verify-pin',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin:p})});
     var result=await res.json();
-    if(result.status==='ok'&&result.can_edit){
-      updateAuthUser=result;
+    if(result.status==='ok'&&result.verified){
+      updateAuthUser=currentUser;
       closeReauthModal();
       openTargetsTableModal();
       return;
     }
-    showReauthError('Admin login required');
+    showReauthError('Incorrect password');
   }catch(e){
-    showReauthError('Login check failed');
+    showReauthError('Verification failed');
   }
 }
 async function openTargetsTableModal(){
