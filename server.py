@@ -26,6 +26,7 @@ load_dotenv()
 from datetime import datetime, date, timedelta
 import csv
 import io
+import socket
 
 try:
     from dateutil.relativedelta import relativedelta
@@ -47,12 +48,15 @@ except ImportError:
             return result
 
 # ==================== CONFIG ====================
-SAP_HANA_HOST     = "103.89.45.192"
-SAP_HANA_PORT     = 30015
-SAP_HANA_USER     = "DATA1"
-SAP_HANA_PASSWORD = "Jivo@1989"
-SAP_SCHEMA        = "JIVO_OIL_HANADB"
-SERVER_PORT       = 8002
+SAP_HANA_HOST     = os.environ.get("SAP_HANA_HOST", "103.89.45.192")
+SAP_HANA_PORT     = int(os.environ.get("SAP_HANA_PORT", "30015"))
+SAP_HANA_USER     = os.environ.get("SAP_HANA_USER", "DATA1")
+SAP_HANA_PASSWORD = os.environ.get("SAP_HANA_PASSWORD", "Jivo@1989")
+SAP_HANA_ENCRYPT  = os.environ.get("SAP_HANA_ENCRYPT", "").strip().lower()
+SAP_HANA_SSL_VALIDATE_CERTIFICATE = os.environ.get("SAP_HANA_SSL_VALIDATE_CERTIFICATE", "").strip().lower()
+SAP_CONNECT_TIMEOUT = float(os.environ.get("SAP_CONNECT_TIMEOUT", "8"))
+SAP_SCHEMA        = os.environ.get("SAP_SCHEMA", "JIVO_OIL_HANADB")
+SERVER_PORT       = int(os.environ.get("SERVER_PORT", "8002"))
 TARGETS_FILE      = "targets.json"
 CONFIG_FILE       = "config.json"
 
@@ -165,6 +169,16 @@ class DrillDownRequest(BaseModel):
     year: Optional[str] = None
     filters: Optional[dict] = None
 
+class GroupDataRequest(BaseModel):
+    start_date: str
+    end_date: str
+    group_by: str
+    type_filter: Optional[str] = None
+    month: Optional[str] = None
+    year: Optional[str] = None
+    products: Optional[List[str]] = None
+    filters: Optional[dict] = None
+
 class PinVerify(BaseModel):
     pin: str
 
@@ -191,10 +205,48 @@ class MigrateRequest(BaseModel):
     updated_by: str             # who is running the migration
 
 # ==================== SAP HANA ====================
+def check_sap_tcp():
+    started = datetime.now()
+    try:
+        with socket.create_connection((SAP_HANA_HOST, SAP_HANA_PORT), timeout=SAP_CONNECT_TIMEOUT):
+            elapsed_ms = int((datetime.now() - started).total_seconds() * 1000)
+            return {"ok": True, "host": SAP_HANA_HOST, "port": SAP_HANA_PORT, "elapsed_ms": elapsed_ms}
+    except OSError as e:
+        elapsed_ms = int((datetime.now() - started).total_seconds() * 1000)
+        return {
+            "ok": False,
+            "host": SAP_HANA_HOST,
+            "port": SAP_HANA_PORT,
+            "elapsed_ms": elapsed_ms,
+            "error": str(e),
+        }
+
 def get_sap_connection():
     try:
         from hdbcli import dbapi
-        conn = dbapi.connect(address=SAP_HANA_HOST, port=SAP_HANA_PORT, user=SAP_HANA_USER, password=SAP_HANA_PASSWORD)
+        tcp = check_sap_tcp()
+        if not tcp["ok"]:
+            raise ConnectionError(
+                f"Cannot reach SAP HANA TCP endpoint {SAP_HANA_HOST}:{SAP_HANA_PORT} "
+                f"within {SAP_CONNECT_TIMEOUT:g}s: {tcp['error']}"
+            )
+
+        connect_kwargs = {
+            "address": SAP_HANA_HOST,
+            "port": SAP_HANA_PORT,
+            "user": SAP_HANA_USER,
+            "password": SAP_HANA_PASSWORD,
+        }
+        if SAP_HANA_ENCRYPT in ("true", "1", "yes", "y"):
+            connect_kwargs["encrypt"] = True
+        elif SAP_HANA_ENCRYPT in ("false", "0", "no", "n"):
+            connect_kwargs["encrypt"] = False
+        if SAP_HANA_SSL_VALIDATE_CERTIFICATE in ("true", "1", "yes", "y"):
+            connect_kwargs["sslValidateCertificate"] = True
+        elif SAP_HANA_SSL_VALIDATE_CERTIFICATE in ("false", "0", "no", "n"):
+            connect_kwargs["sslValidateCertificate"] = False
+
+        conn = dbapi.connect(**connect_kwargs)
         return conn
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"SAP HANA connection failed: {str(e)}")
@@ -236,17 +288,24 @@ def reclassify_item(u_type, u_sub, item_name):
 async def serve_dashboard():
     return FileResponse("dashboard.html", media_type="text/html")
 
+@app.get("/dashboard.html")
+async def serve_dashboard_html():
+    return FileResponse("dashboard.html", media_type="text/html")
+
 @app.get("/health")
 async def health():
+    tcp = check_sap_tcp()
+    if not tcp["ok"]:
+        return {"status": "error", "sap_connected": False, "tcp": tcp}
     try:
         conn = get_sap_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT CURRENT_TIMESTAMP FROM DUMMY")
         ts = cursor.fetchone()[0]
         cursor.close(); conn.close()
-        return {"status": "ok", "sap_connected": True, "sap_time": str(ts)}
+        return {"status": "ok", "sap_connected": True, "sap_time": str(ts), "tcp": tcp}
     except Exception as e:
-        return {"status": "error", "sap_connected": False, "error": str(e)}
+        return {"status": "error", "sap_connected": False, "tcp": tcp, "error": str(e)}
 
 @app.post("/api/verify-pin")
 async def verify_pin(req: PinVerify):
@@ -523,6 +582,7 @@ async def drill_down(req: DrillDownRequest):
         u_sub     = str(d.get("U_Sub_Group", "")).strip().upper()
         item_name = str(d.get("ItemName", "") or "").strip().upper()
         u_type, u_sub = reclassify_item(u_type, u_sub, item_name)
+        product_key = f"{u_type}|{u_sub}"
 
         if u_type != req.u_type.upper() or u_sub != req.u_sub_group.upper(): continue
 
@@ -534,6 +594,16 @@ async def drill_down(req: DrillDownRequest):
         if req.filters:
             skip = False
             for fk, fv in req.filters.items():
+                if fk.upper() in ("U_TYPE", "TYPE"):
+                    if u_type != str(fv).upper():
+                        skip = True
+                        break
+                    continue
+                if fk.upper() in ("U_SUB_GROUP", "PRODUCT"):
+                    if product_key != str(fv).upper() and u_sub != str(fv).upper():
+                        skip = True
+                        break
+                    continue
                 val = ""
                 for c in columns:
                     if c.upper() == fk.upper() or c == fk:
@@ -553,6 +623,109 @@ async def drill_down(req: DrillDownRequest):
 
     data = sorted(results.values(), key=lambda x: x["litres"], reverse=True)
     return {"data": data}
+
+@app.post("/api/group-data")
+async def group_data(req: GroupDataRequest):
+    if not _cache["raw_data"]:
+        raise HTTPException(400, "No cached data — click Fetch Data first")
+
+    columns = _cache["columns"]
+    group_by = (req.group_by or "Product").strip()
+    group_col = None
+    if group_by.upper() != "PRODUCT":
+        for c in columns:
+            if c.upper() == group_by.upper() or c == group_by:
+                group_col = c
+                break
+        if not group_col:
+            raise HTTPException(400, f"Column '{req.group_by}' not found. Available: {columns}")
+
+    selected_products = set()
+    for p in req.products or []:
+        if "|" in p:
+            selected_products.add(p.strip().upper())
+    if req.products is not None and not selected_products:
+        return {"status": "ok", "data": []}
+
+    results = {}
+    for d in _cache["raw_data"]:
+        u_type    = str(d.get("U_TYPE", "")).strip().upper()
+        u_sub     = str(d.get("U_Sub_Group", "")).strip().upper()
+        item_name = str(d.get("ItemName", "") or "").strip().upper()
+        u_type, u_sub = reclassify_item(u_type, u_sub, item_name)
+
+        if u_sub not in ALLOWED_SUB_GROUPS:
+            continue
+        if req.type_filter and u_type != req.type_filter.upper():
+            continue
+        product_key = f"{u_type}|{u_sub}"
+        if selected_products and product_key not in selected_products:
+            continue
+
+        if req.month or req.year:
+            m, y = parse_doc_date(d.get("DocDate", ""))
+            if req.month and m != req.month:
+                continue
+            if req.year and y != req.year:
+                continue
+
+        if req.filters:
+            skip = False
+            for fk, fv in req.filters.items():
+                if fk.upper() in ("U_TYPE", "TYPE"):
+                    if u_type != str(fv).upper():
+                        skip = True
+                        break
+                    continue
+                if fk.upper() == "PRODUCT":
+                    if product_key != str(fv).upper():
+                        skip = True
+                        break
+                    continue
+                val = ""
+                for c in columns:
+                    if c.upper() == fk.upper() or c == fk:
+                        val = str(d.get(c, "")).strip()
+                        break
+                if val.upper() != str(fv).upper():
+                    skip = True
+                    break
+            if skip:
+                continue
+
+        if group_by.upper() == "PRODUCT":
+            dim_val = product_key
+            label = u_sub
+            result_key = dim_val
+        else:
+            dim_val = str(d.get(group_col, "") or "UNKNOWN").strip() or "UNKNOWN"
+            label = dim_val
+            result_key = f"{u_type}|{dim_val}"
+
+        litres    = float(d.get("Liter", 0) or 0)
+        linetotal = float(d.get("LineTotal", 0) or 0)
+
+        if result_key not in results:
+            results[result_key] = {
+                "dimension": label,
+                "value": dim_val,
+                "group_by": group_by,
+                "u_type": u_type,
+                "u_sub_group": u_sub if group_by.upper() == "PRODUCT" else "",
+                "litres": 0,
+                "linetotal": 0,
+            }
+        results[result_key]["litres"]    += litres
+        results[result_key]["linetotal"] += linetotal
+
+    data = []
+    for row in results.values():
+        row["litres"] = round(row["litres"], 2)
+        row["linetotal"] = round(row["linetotal"], 2)
+        row["realise"] = round(row["linetotal"] / row["litres"], 2) if row["litres"] > 0 else 0
+        data.append(row)
+    data.sort(key=lambda x: (0 if x["u_type"] == "PREMIUM" else 1, -x["litres"], x["dimension"]))
+    return {"status": "ok", "data": data}
 
 # ==================== LEGACY TARGETS (targets.json) ====================
 # Keep these routes intact until full Supabase cutover.

@@ -229,14 +229,17 @@ td.ecell input.locked{background:var(--surface2);color:var(--text3);cursor:not-a
   </div>
   <div class="sep"></div>
   <div class="cg"><label>Drill By</label>
-    <select id="fDrill" class="drill-sel" onchange="onDrillChange()">
-      <option value="">--SELECT--</option>
-      <option value="State">State</option>
-      <option value="U_Main_Group">Main Group</option>
-      <option value="U_Chain">Chain</option>
-      <option value="ItemName">Item Name</option>
-      <option value="CardName">Customer</option>
-    </select>
+    <div class="prod-filter-wrap drill-filter-wrap">
+      <button class="prod-filter-btn drill-sel" id="dfBtn" onclick="toggleDrillFilter()">--SELECT-- &#9662;</button>
+      <div class="prod-filter-drop" id="dfDrop">
+        <div class="pf-header">
+          <button onclick="dfSelectAll()">Select All</button>
+          <button onclick="dfClearAll()">Clear All</button>
+        </div>
+        <div id="dfList"></div>
+        <div class="pf-apply"><button onclick="applyDrillFilter()">Apply</button></div>
+      </div>
+    </div>
   </div>
   <button class="btn btn-ghost" id="expandAllBtn" onclick="toggleExpandAll()" title="Expand/Collapse all products">&#9660; Expand All</button>
   <div class="sep"></div>
@@ -438,18 +441,38 @@ var selectedProducts={};
 for(var pi=0;pi<PRODUCTS.length;pi++) selectedProducts[PRODUCTS[pi].u_type+'|'+PRODUCTS[pi].u_sub_group]=true;
 function isProdSelected(type,sub){return selectedProducts[type+'|'+sub]!==false;}
 
-function getDrillBy(){return document.getElementById('fDrill').value;}
+var DRILL_OPTIONS=[
+  {value:'Product',label:'Product'},
+  {value:'State',label:'State'},
+  {value:'U_Main_Group',label:'Main Group'},
+  {value:'U_Chain',label:'Chain'},
+  {value:'ItemName',label:'Item Name'},
+  {value:'CardName',label:'Customer'}
+];
+var selectedDrillDims=[];
+function getDrillBy(){return selectedDrillDims.length?selectedDrillDims[0]:'';}
+function getNextDrillBy(path){
+  var used=usedDimsInPath(path);
+  for(var i=0;i<selectedDrillDims.length;i++){
+    if(used.indexOf(selectedDrillDims[i])===-1)return selectedDrillDims[i];
+  }
+  return '';
+}
+function canOpenDrillPath(path){return !!drillData[path]||!!getNextDrillBy(path);}
+function isProductView(){var db=getDrillBy();return !db||db==='Product';}
+function drillLabel(v){var m={Product:'Product',State:'State',U_Main_Group:'Main Group',U_Chain:'Chain',ItemName:'Item Name',CardName:'Customer'};return m[v]||v||'Product';}
 function productKey(r){return r.u_type+'|'+r.u_sub_group;}
+function rowKey(r){return r._group_key||productKey(r);}
 function getAvgRealise(r){var pk=productKey(r);return avgRealiseData[pk]||0;}
 function getDrillAvgRealise(uType,uSub,drillCol,dimValue){
   var key=uType+'|'+uSub+'|'+drillCol+'|'+dimValue.toUpperCase();
   return avgRealiseDrill[key]||0;
 }
-function usedDimsInPath(path){var dims=[];var parts=path.split('>');for(var i=1;i<parts.length;i++)dims.push(parts[i].split('=')[0]);if(drillDim[path])dims.push(drillDim[path]);return dims;}
+function usedDimsInPath(path){var dims=[];if(path.indexOf('ROOT')!==0&&path.indexOf('|')!==-1)dims.push('Product');var parts=path.split('>');for(var i=1;i<parts.length;i++)dims.push(parts[i].split('=')[0]);if(drillDim[path])dims.push(drillDim[path]);return dims;}
 function filtersFromPath(path){var f={};var parts=path.split('>');for(var i=1;i<parts.length;i++){var eq=parts[i].indexOf('=');f[parts[i].substring(0,eq)]=parts[i].substring(eq+1);}return f;}
 function clearChildren(pp){var pfx=pp+'>';var ks=Object.keys(drillData);for(var i=0;i<ks.length;i++){if(ks[i].indexOf(pfx)===0){delete drillData[ks[i]];delete drillOpen[ks[i]];delete drillDim[ks[i]];}}}
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/'/g,'&#39;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
-function onDrillChange(){if(!getDrillBy()){drillData={};drillOpen={};drillDim={};rootDrillDim='';}renderTable();}
+async function onDrillChange(){drillData={};drillOpen={};drillDim={};rootDrillDim='';allExpanded=false;document.getElementById('expandAllBtn').innerHTML='&#9660; Expand All';try{await applyFilters();}catch(e){showToast('Group error: '+e.message,'err');}}
 
 var allExpanded=false;
 
@@ -460,14 +483,31 @@ function toggleExpandAll(){
 async function expandAll(){
   var db=getDrillBy();if(!db){showToast('Select a Drill By option first','info');return;}
   if(!dataFetched){showToast('Fetch data first','info');return;}
+  if(isProductView()&&selectedDrillDims.length<2){showToast('Select at least one drill level after Product','info');return;}
   var btn=document.getElementById('expandAllBtn');btn.disabled=true;btn.textContent='Expanding...';
-  var useDb=rootDrillDim||db;
+  if(!isProductView()){
+    var countRoot=0;
+    for(var ri=0;ri<filtered.length;ri++){
+      var root=filtered[ri],rk=rowKey(root);
+      if(root._nodata||root.litres<=0)continue;
+      if(drillOpen[rk])continue;
+      if(drillData[rk]){drillOpen[rk]=true;countRoot++;continue;}
+      var nextRootDb=getNextDrillBy(rk);
+      if(nextRootDb){await fetchGroupedExpand(rk,nextRootDb);countRoot++;}
+    }
+    allExpanded=true;
+    btn.disabled=false;btn.innerHTML='&#9650; Collapse All';
+    showToast('Expanded '+countRoot+' '+drillLabel(db).toLowerCase()+' rows','ok');
+    return;
+  }
+  var useDb=rootDrillDim||(db==='Product'?selectedDrillDims[1]:db);
   if(!rootDrillDim)rootDrillDim=useDb;
   var count=0;
   for(var i=0;i<filtered.length;i++){
     var row=filtered[i],pk=productKey(row);
     if(row._nodata||row.litres<=0)continue;
     if(drillOpen[pk]&&drillDim[pk]===useDb)continue;
+    if(drillData[pk]&&drillDim[pk]===useDb){drillOpen[pk]=true;count++;continue;}
     clearChildren(pk);delete drillData[pk];delete drillDim[pk];
     await fetchAndExpand(pk,row.u_type,row.u_sub_group,pk,useDb);
     count++;
@@ -478,10 +518,8 @@ async function expandAll(){
 }
 
 function collapseAll(){
-  for(var i=0;i<filtered.length;i++){
-    var pk=productKey(filtered[i]);
-    drillOpen[pk]=false;
-  }
+  var keys=Object.keys(drillOpen);
+  for(var i=0;i<keys.length;i++)drillOpen[keys[i]]=false;
   allExpanded=false;
   document.getElementById('expandAllBtn').innerHTML='&#9660; Expand All';
   renderTable();
@@ -619,6 +657,11 @@ async function applyFilters(){
   drillData={};drillOpen={};drillDim={};rootDrillDim='';allExpanded=false;
   document.getElementById('expandAllBtn').innerHTML='&#9660; Expand All';
   var ft=document.getElementById('fType').value,fm=document.getElementById('fMonth').value,fy=document.getElementById('fYear').value;
+  if(!isProductView()){
+    await loadGroupedRows(getDrillBy(),ft,fm,fy);
+    renderTable();updateSummary();
+    return;
+  }
   var rows=[];for(var i=0;i<allData.length;i++){var r=allData[i];if(ft&&r.u_type!==ft)continue;if(fm&&r.month!==fm)continue;if(fy&&r.year!==fy)continue;if(!isProdSelected(r.u_type,r.u_sub_group))continue;rows.push(r);}
   if(!fm){
     var agg={};for(var i=0;i<rows.length;i++){var r=rows[i],gk=r.u_type+'|'+r.u_sub_group;
@@ -653,14 +696,60 @@ async function applyFilters(){
   renderTable();updateSummary();
 }
 
+function selectedProductKeys(){
+  var keys=[];
+  for(var i=0;i<PRODUCTS.length;i++){
+    var p=PRODUCTS[i],pk=p.u_type+'|'+p.u_sub_group;
+    if(selectedProducts[pk]!==false)keys.push(pk);
+  }
+  return keys;
+}
+
+async function loadGroupedRows(groupBy,ft,fm,fy){
+  async function fetchGroupRows(typeFilter){
+    var body={
+      start_date:document.getElementById('dFrom').value,
+      end_date:document.getElementById('dTo').value,
+      group_by:groupBy,
+      type_filter:typeFilter,
+      month:fm,
+      year:fy,
+      products:selectedProductKeys()
+    };
+    var res=await fetch(API+'/api/group-data',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    if(!res.ok){var err=await res.json();throw new Error(err.detail||'Group failed');}
+    var result=await res.json();
+    return (result.data||[]).map(function(r){
+      r.u_type=(r.u_type||typeFilter||'').toUpperCase();
+      return r;
+    });
+  }
+  var rows=[];
+  if(ft){
+    rows=await fetchGroupRows(ft);
+  }else{
+    var premiumRows=await fetchGroupRows('PREMIUM');
+    var commodityRows=await fetchGroupRows('COMMODITY');
+    rows=premiumRows.concat(commodityRows);
+  }
+  filtered=rows.map(function(r){
+    var rowType=(r.u_type||'').toUpperCase();
+    return {_root_group:true,_group_col:groupBy,_group_key:'ROOT>U_TYPE='+rowType+'>'+groupBy+'='+r.value,dimension:r.dimension,filter_value:r.value,
+      u_type:rowType,u_sub_group:r.dimension,month:fm||'ALL',year:fy||'',litres:r.litres||0,linetotal:r.linetotal||0,
+      realise:r.realise||0,target_sale:0,target_realise:0,_nodata:false};
+  });
+}
+
 function renderTable(){
   var tbody=document.getElementById('tBody'),html='',db=getDrillBy();
+  document.querySelector('th.th-sap:nth-child(3)').textContent=drillLabel(isProductView()?'Product':db);
   for(var i=0;i<filtered.length;i++){
     var row=filtered[i],nodata=row._nodata,ts=row.target_sale||0,tr=row.target_realise||0;
     var bc=row.u_type==='PREMIUM'?'badge-prem':'badge-comm';
     var c=nodata?{I:0,J:0,K:0}:calc(row.litres,row.linetotal,row.realise,ts,tr);
-    var pk=productKey(row),isOpen=drillOpen[pk];
-    var showBtn=db&&dataFetched&&!nodata&&row.litres>0;
+    var pk=rowKey(row),isOpen=drillOpen[pk];
+    var hasNextDrill=row._root_group?canOpenDrillPath(pk):(!isProductView()||selectedDrillDims.length>1);
+    var showBtn=db&&dataFetched&&!nodata&&row.litres>0&&hasNextDrill;
 
     html+='<tr data-i="'+i+'">';
     html+='<td class="num" style="color:var(--text3)">'+(i+1)+'</td>';
@@ -668,7 +757,7 @@ function renderTable(){
     if(showBtn){html+='<td class="sub-cell"><button class="drill-btn'+(isOpen?' open':'')+'" onclick="toggleDrill('+i+')">'+(isOpen?'\u2212':'+')+'</button>'+row.u_sub_group+'</td>';}
     else{html+='<td class="sub-cell">'+row.u_sub_group+'</td>';}
 
-    html+='<td class="ecell"><input type="number" value="'+(ts||'')+'" placeholder="0" readonly class="locked"></td>';
+    if(row._root_group){html+='<td class="empty-sap">&mdash;</td>';}else{html+='<td class="ecell"><input type="number" value="'+(ts||'')+'" placeholder="0" readonly class="locked"></td>';}
     var ar=getAvgRealise(row);
     if(nodata){
       html+='<td class="ecell"><input type="number" value="'+(tr||'')+'" placeholder="0" readonly class="locked"></td>';
@@ -676,22 +765,24 @@ function renderTable(){
       html+='<td class="empty-sap">&mdash;</td><td class="empty-sap">&mdash;</td><td class="empty-sap">&mdash;</td>';
       html+='<td class="empty-sap">&mdash;</td><td class="empty-sap">&mdash;</td><td class="empty-sap">&mdash;</td>';
     }else{
-      html+='<td class="ecell"><input type="number" value="'+(tr||'')+'" placeholder="0" readonly class="locked"></td>';
+      if(row._root_group){html+='<td class="empty-sap">&mdash;</td>';}else{html+='<td class="ecell"><input type="number" value="'+(tr||'')+'" placeholder="0" readonly class="locked"></td>';}
       html+='<td class="num" style="color:var(--indigo)">'+(ar?fN(ar,2):'<span class="v-dash">&mdash;</span>')+'</td>';
       html+='<td class="num">'+fN(row.litres)+'</td>';
       html+='<td class="num">'+fN(row.realise,2)+'</td>';
       html+='<td class="num">'+fC(row.linetotal)+'</td>';
-      html+='<td class="ccell num '+vc(c.I)+'" id="cI'+i+'">'+fN(c.I)+'</td>';
-      html+='<td class="ccell num" id="cJ'+i+'">'+(c.J?fN(c.J,2):'<span class="v-dash">&mdash;</span>')+'</td>';
-      html+='<td class="ccell num" id="cK'+i+'">'+(c.K?fC(c.K):'<span class="v-dash">&mdash;</span>')+'</td>';
+      if(row._root_group){html+='<td></td><td></td><td></td>';}
+      else{
+        html+='<td class="ccell num '+vc(c.I)+'" id="cI'+i+'">'+fN(c.I)+'</td>';
+        html+='<td class="ccell num" id="cJ'+i+'">'+(c.J?fN(c.J,2):'<span class="v-dash">&mdash;</span>')+'</td>';
+        html+='<td class="ccell num" id="cK'+i+'">'+(c.K?fC(c.K):'<span class="v-dash">&mdash;</span>')+'</td>';
+      }
     }
     html+='</tr>';
-    if(isOpen&&drillData[pk])html+=renderSubRows(pk,row.u_type,row.u_sub_group,pk,0);
+    if(isOpen&&drillData[pk])html+=row._root_group?renderGroupRows(pk,0):renderSubRows(pk,row.u_type,row.u_sub_group,pk,0);
   }
   var t=computeTotals();
   html+='<tr class="total-row"><td></td><td colspan="2">TOTAL</td>';
-  html+='<td class="num">'+fN(t.ts)+'</td>';
-  html+='<td class="num">'+fN(t.twr,2)+'</td>';
+  html+=t.hasRoot?'<td></td><td></td>':'<td class="num">'+fN(t.ts)+'</td><td class="num">'+fN(t.twr,2)+'</td>';
   html+='<td></td>';
   if(!dataFetched){
     html+='<td class="empty-sap">&mdash;</td><td class="empty-sap">&mdash;</td><td class="empty-sap">&mdash;</td>';
@@ -700,9 +791,9 @@ function renderTable(){
     html+='<td class="num">'+fN(t.litres)+'</td>';
     html+='<td class="num">'+fN(t.nr,2)+'</td>';
     html+='<td class="num">'+fC(t.lt)+'</td>';
-    html+='<td class="num '+vc(t.cI)+'">'+fN(t.cI)+'</td>';
+    html+=t.hasRoot?'<td></td>':'<td class="num '+vc(t.cI)+'">'+fN(t.cI)+'</td>';
     html+='<td></td>';
-    html+='<td class="num">'+(t.cK?fC(t.cK):'&mdash;')+'</td>';
+    html+=t.hasRoot?'<td></td>':'<td class="num">'+(t.cK?fC(t.cK):'&mdash;')+'</td>';
   }
   html+='</tr>';
   tbody.innerHTML=html;
@@ -710,13 +801,12 @@ function renderTable(){
 
 function renderSubRows(productPK,uType,uSubGroup,parentPath,depth){
   var items=drillData[parentPath];if(!items)return'';
-  var html='',db=getDrillBy(),parentDimUsed=drillDim[parentPath]||'';
-  var usedInChain=usedDimsInPath(parentPath);
-  var canExpand=db&&usedInChain.indexOf(db)===-1;
+  var html='',parentDimUsed=drillDim[parentPath]||'',nextDb=getNextDrillBy(parentPath);
   var indent=20+(depth*20);
   for(var i=0;i<items.length;i++){
     var s=items[i],childPath=parentPath+'>'+parentDimUsed+'='+s.dimension;
     var isChildOpen=drillOpen[childPath];
+    var canExpand=!!nextDb||!!drillData[childPath];
     var sr=s.litres>0?Math.round((s.linetotal/s.litres)*100)/100:0;
     html+='<tr class="sub-row depth-'+Math.min(depth,2)+'">';
     html+='<td></td><td></td>';
@@ -738,24 +828,108 @@ function renderSubRows(productPK,uType,uSubGroup,parentPath,depth){
   return html;
 }
 
+function renderGroupRows(parentPath,depth){
+  var items=drillData[parentPath];if(!items)return'';
+  var html='',parentDimUsed=drillDim[parentPath]||'',nextDb=getNextDrillBy(parentPath),indent=20+(depth*20);
+  for(var i=0;i<items.length;i++){
+    var s=items[i],sr=s.litres>0?Math.round((s.linetotal/s.litres)*100)/100:0;
+    var bc=s.u_type==='PREMIUM'?'badge-prem':'badge-comm';
+    var childPath=parentPath+'>'+parentDimUsed+'='+s.value;
+    var isChildOpen=drillOpen[childPath];
+    var isProduct=s.group_by&&String(s.group_by).toUpperCase()==='PRODUCT';
+    var canExpand=!!nextDb||!!drillData[childPath];
+    html+='<tr class="sub-row depth-0">';
+    html+='<td></td>';
+    html+='<td><span class="badge '+bc+'">'+s.u_type+'</span></td>';
+    if(canExpand&&s.litres>0){
+      html+='<td style="padding-left:'+indent+'px"><button class="drill-btn'+(isChildOpen?' open':'')+'" onclick="toggleGroupDrill(\''+esc(parentPath)+'\',\''+esc(childPath)+'\');">'+(isChildOpen?'\u2212':'+')+'</button><span class="sub-dim">'+s.dimension+'</span></td>';
+    }else{
+      html+='<td style="padding-left:'+indent+'px"><span class="sub-dim">'+s.dimension+'</span></td>';
+    }
+    html+='<td></td><td></td><td></td>';
+    html+='<td class="num">'+fN(s.litres)+'</td>';
+    html+='<td class="num">'+fN(sr,2)+'</td>';
+    html+='<td class="num">'+fC(s.linetotal)+'</td>';
+    html+='<td></td><td></td><td></td>';
+    html+='</tr>';
+    if(isChildOpen&&drillData[childPath]){
+      html+=isProduct?renderSubRows(s.value,s.u_type,s.u_sub_group,childPath,depth+1):renderGroupRows(childPath,depth+1);
+    }
+  }
+  return html;
+}
+
 async function toggleDrill(idx){
   var row=filtered[idx],pk=productKey(row),db=getDrillBy();if(!db)return;
+  if(row._root_group){
+    pk=rowKey(row);
+    if(drillOpen[pk]){drillOpen[pk]=false;renderTable();return;}
+    if(drillData[pk]){drillOpen[pk]=true;renderTable();return;}
+    var nextDb=getNextDrillBy(pk);
+    if(!nextDb){showToast('No more drill levels selected','info');return;}
+    await fetchGroupedExpand(pk,nextDb);
+    return;
+  }
   if(drillOpen[pk]){drillOpen[pk]=false;renderTable();return;}
-  var useDb=rootDrillDim||db;
+  var useDb=rootDrillDim||(db==='Product'?selectedDrillDims[1]:db);
+  if(!useDb){showToast('Select at least one drill level after Product','info');return;}
   if(drillData[pk]&&drillDim[pk]===useDb){drillOpen[pk]=true;renderTable();return;}
   clearChildren(pk);delete drillData[pk];delete drillDim[pk];
   if(!rootDrillDim)rootDrillDim=useDb;
   await fetchAndExpand(pk,row.u_type,row.u_sub_group,pk,useDb);
 }
+
+async function fetchRootProducts(row){
+  var fm=document.getElementById('fMonth').value,fy=document.getElementById('fYear').value,ft=document.getElementById('fType').value;
+  var body={start_date:document.getElementById('dFrom').value,end_date:document.getElementById('dTo').value,group_by:'Product',
+    type_filter:ft,month:fm,year:fy,products:selectedProductKeys(),filters:{}};
+  body.filters[row._group_col]=row.filter_value;
+  try{
+    var res=await fetch(API+'/api/group-data',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    if(!res.ok){var err=await res.json();throw new Error(err.detail||'Group failed');}
+    var result=await res.json(),rk=rowKey(row);
+    drillData[rk]=(result.data||[]).sort(function(a,b){return b.litres-a.litres;});
+    drillDim[rk]='Product';drillOpen[rk]=true;renderTable();
+  }catch(e){showToast('Drill error: '+e.message,'err');}
+}
+async function fetchGroupedExpand(path,groupBy){
+  var fm=document.getElementById('fMonth').value,fy=document.getElementById('fYear').value,ft=document.getElementById('fType').value;
+  var body={start_date:document.getElementById('dFrom').value,end_date:document.getElementById('dTo').value,group_by:groupBy,
+    type_filter:ft,month:fm,year:fy,products:selectedProductKeys(),filters:filtersFromPath(path)};
+  try{
+    var res=await fetch(API+'/api/group-data',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    if(!res.ok){var err=await res.json();throw new Error(err.detail||'Group failed');}
+    var result=await res.json();
+    drillData[path]=(result.data||[]).sort(function(a,b){return b.litres-a.litres;});
+    drillDim[path]=groupBy;drillOpen[path]=true;renderTable();
+    showToast(drillLabel(groupBy)+': '+drillData[path].length+' rows','ok');
+  }catch(e){showToast('Drill error: '+e.message,'err');}
+}
 async function toggleSubDrill(productPK,uType,uSubGroup,childPath){
-  var db=getDrillBy();if(!db)return;
   if(drillOpen[childPath]){drillOpen[childPath]=false;renderTable();return;}
-  if(drillData[childPath]&&drillDim[childPath]===db){drillOpen[childPath]=true;renderTable();return;}
+  var db=getNextDrillBy(childPath);
+  if(drillData[childPath]&&(!db||drillDim[childPath]===db)){drillOpen[childPath]=true;renderTable();return;}
+  if(!db){showToast('No more drill levels selected','info');return;}
   clearChildren(childPath);delete drillData[childPath];delete drillDim[childPath];
   await fetchAndExpand(productPK,uType,uSubGroup,childPath,db);
 }
+async function toggleGroupDrill(parentPath,childPath){
+  if(drillOpen[childPath]){drillOpen[childPath]=false;renderTable();return;}
+  var db=getNextDrillBy(childPath);
+  if(drillData[childPath]&&(!db||drillDim[childPath]===db)){drillOpen[childPath]=true;renderTable();return;}
+  if(!db){showToast('No more drill levels selected','info');return;}
+  clearChildren(childPath);delete drillData[childPath];delete drillDim[childPath];
+  var items=drillData[parentPath]||[],productRow=null;
+  for(var i=0;i<items.length;i++){if((parentPath+'>'+drillDim[parentPath]+'='+items[i].value)===childPath){productRow=items[i];break;}}
+  if(productRow&&productRow.group_by&&String(productRow.group_by).toUpperCase()==='PRODUCT'){
+    await fetchAndExpand(productRow.value,productRow.u_type,productRow.u_sub_group,childPath,db);
+  }else{
+    await fetchGroupedExpand(childPath,db);
+  }
+}
 async function fetchAndExpand(productPK,uType,uSubGroup,path,drillBy){
   var filters=filtersFromPath(path);
+  if(filters.Product)delete filters.Product;
   var fm=document.getElementById('fMonth').value,fy=document.getElementById('fYear').value;
   var sd=document.getElementById('dFrom').value,ed=document.getElementById('dTo').value;
   var body={start_date:sd,end_date:ed,u_type:uType,u_sub_group:uSubGroup,drill_by:drillBy,filters:filters};
@@ -772,7 +946,7 @@ async function fetchAndExpand(productPK,uType,uSubGroup,path,drillBy){
 }
 
 function calc(litres,lt,realise,ts,tr){var I=litres-ts;var J=0;if(I<0)J=-(((ts*tr)-lt)/I);var K=0;if(litres>ts)K=(realise-tr)*litres;return{I:I,J:J,K:K};}
-function computeTotals(){var litres=0,lt=0,ts=0,cI=0,cK=0,spTR=0;for(var i=0;i<filtered.length;i++){var r=filtered[i],rts=r.target_sale||0,rtr=r.target_realise||0;ts+=rts;spTR+=rts*rtr;if(r._nodata)continue;var c=calc(r.litres,r.linetotal,r.realise,rts,rtr);litres+=r.litres;lt+=r.linetotal;cI+=c.I;cK+=c.K;}var twr=ts>0?spTR/ts:0,nr=litres>0?lt/litres:0;return{litres:litres,lt:lt,ts:ts,cI:cI,cK:cK,twr:twr,nr:nr};}
+function computeTotals(){var litres=0,lt=0,ts=0,cI=0,cK=0,spTR=0,hasRoot=false;for(var i=0;i<filtered.length;i++){var r=filtered[i],rts=r.target_sale||0,rtr=r.target_realise||0;if(r._root_group)hasRoot=true;ts+=rts;spTR+=rts*rtr;if(r._nodata)continue;litres+=r.litres;lt+=r.linetotal;if(r._root_group)continue;var c=calc(r.litres,r.linetotal,r.realise,rts,rtr);cI+=c.I;cK+=c.K;}var twr=ts>0?spTR/ts:0,nr=litres>0?lt/litres:0;return{litres:litres,lt:lt,ts:ts,cI:cI,cK:cK,twr:twr,nr:nr,hasRoot:hasRoot};}
 
 function onEdit(inp){
   var field=inp.dataset.f,val=parseFloat(inp.value)||0,idx=parseInt(inp.closest('tr').dataset.i),displayRow=filtered[idx];
@@ -827,6 +1001,8 @@ function updateSummary(){
   document.getElementById('sLT').textContent=dataFetched?'₹'+fNp(Math.round(t.lt)):'—';
   var d=document.getElementById('sD');
   if(dataFetched){d.textContent=fNp(t.cI);d.className='sv '+(t.cI>=0?'pos':'neg');}else{d.textContent='—';d.className='sv';}
+  if(t.hasRoot){d.textContent='-';d.className='sv';}
+  if(t.hasRoot){document.getElementById('sTWR').textContent='-';document.getElementById('sT').textContent='-';}
   document.getElementById('sR').textContent=filtered.length;
 }
 
@@ -999,6 +1175,53 @@ async function saveAllTargets(){
   }
 }
 
+// ==================== DRILL FILTER ====================
+function buildDrillFilterList(){
+  var html='';
+  for(var i=0;i<DRILL_OPTIONS.length;i++){
+    var opt=DRILL_OPTIONS[i],checked=selectedDrillDims.indexOf(opt.value)!==-1;
+    var order=selectedDrillDims.indexOf(opt.value)+1;
+    html+='<div class="pf-item"><input type="checkbox" id="df_'+i+'" '+(checked?'checked':'')+' data-drill="'+opt.value+'"><label for="df_'+i+'">'+opt.label+(checked?' <span class="pf-badge badge-comm">'+order+'</span>':'')+'</label></div>';
+  }
+  document.getElementById('dfList').innerHTML=html;
+}
+function toggleDrillFilter(){
+  var drop=document.getElementById('dfDrop');
+  if(drop.classList.contains('show')){drop.classList.remove('show');return;}
+  buildDrillFilterList();
+  drop.classList.add('show');
+}
+function dfSelectAll(){
+  var cbs=document.querySelectorAll('#dfList input[type=checkbox]');
+  for(var i=0;i<cbs.length;i++)cbs[i].checked=true;
+}
+function dfClearAll(){
+  var cbs=document.querySelectorAll('#dfList input[type=checkbox]');
+  for(var i=0;i<cbs.length;i++)cbs[i].checked=false;
+}
+function applyDrillFilter(){
+  var cbs=document.querySelectorAll('#dfList input[type=checkbox]');
+  var next=[];
+  for(var i=0;i<selectedDrillDims.length;i++){
+    var existing=document.querySelector('#dfList input[data-drill="'+selectedDrillDims[i]+'"]');
+    if(existing&&existing.checked)next.push(selectedDrillDims[i]);
+  }
+  for(var j=0;j<cbs.length;j++){
+    if(cbs[j].checked&&next.indexOf(cbs[j].dataset.drill)===-1)next.push(cbs[j].dataset.drill);
+  }
+  selectedDrillDims=next;
+  document.getElementById('dfDrop').classList.remove('show');
+  updateDrillButton();
+  onDrillChange();
+}
+function updateDrillButton(){
+  var btn=document.getElementById('dfBtn');
+  if(!selectedDrillDims.length){btn.innerHTML='--SELECT-- &#9662;';return;}
+  var labels=[];
+  for(var i=0;i<selectedDrillDims.length;i++)labels.push(drillLabel(selectedDrillDims[i]));
+  btn.innerHTML=labels.join(' &gt; ')+' &#9662;';
+}
+
 // ==================== PRODUCT FILTER ====================
 function buildProductFilterList(){
   var html='';
@@ -1044,6 +1267,10 @@ document.addEventListener('click',function(e){
   var wrap=document.querySelector('.prod-filter-wrap');
   if(wrap&&!wrap.contains(e.target)){
     document.getElementById('pfDrop').classList.remove('show');
+  }
+  var drillWrap=document.querySelector('.drill-filter-wrap');
+  if(drillWrap&&!drillWrap.contains(e.target)){
+    document.getElementById('dfDrop').classList.remove('show');
   }
 });
 
